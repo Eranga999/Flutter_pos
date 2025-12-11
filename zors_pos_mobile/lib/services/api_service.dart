@@ -33,14 +33,14 @@ class ApiService {
 
   // AUTH ENDPOINTS
   static Future<Map<String, dynamic>> login(
-    String email,
+    String username,
     String password,
   ) async {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'username': username, 'password': password}),
       );
 
       if (response.statusCode == 200) {
@@ -50,7 +50,11 @@ class ApiService {
         }
         return {'success': true, 'data': data};
       } else {
-        return {'success': false, 'message': 'Login failed'};
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['message'] ?? 'Login failed',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
@@ -59,6 +63,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> register(
     String name,
+    String username,
     String email,
     String password,
   ) async {
@@ -66,7 +71,13 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/auth/register'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'name': name, 'email': email, 'password': password}),
+        body: jsonEncode({
+          'name': name,
+          'username': username,
+          'email': email,
+          'password': password,
+          'role': 'cashier', // Default role for new registrations
+        }),
       );
 
       if (response.statusCode == 201) {
