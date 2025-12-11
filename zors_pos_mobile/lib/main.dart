@@ -12,6 +12,7 @@ import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/customers_screen.dart';
+import 'screens/admin_home_screen.dart';
 
 void main() {
   runApp(const ZorsPosApp());
@@ -61,6 +62,10 @@ class _AuthGateState extends State<AuthGate> {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
         if (auth.isAuthenticated) {
+          // Check if user is admin
+          if (auth.user?.role == 'admin') {
+            return const AdminHomeScreen();
+          }
           return const MainShell();
         }
 
