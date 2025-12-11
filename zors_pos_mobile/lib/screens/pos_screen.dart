@@ -78,7 +78,7 @@ class _PosScreenState extends State<PosScreen> {
                             crossAxisCount: 2,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 12,
-                            childAspectRatio: 0.78,
+                            childAspectRatio: 0.55,
                           ),
                       itemBuilder: (context, index) {
                         final product = products[index];
@@ -211,54 +211,84 @@ class _PosScreenState extends State<PosScreen> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE8E8E8)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8E8E8), width: 1),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 8,
-            offset: Offset(0, 4),
+            color: Color(0x0A000000),
+            blurRadius: 4,
+            offset: Offset(0, 2),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Stock Badge and Menu
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _stockBadge(product.stock),
-                const Icon(Icons.more_vert, size: 20, color: Colors.black54),
+                Icon(Icons.more_vert, size: 18, color: Colors.grey.shade400),
               ],
             ),
-            const SizedBox(height: 8),
-            Expanded(
+          ),
+          // Image Container
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200, width: 1),
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   child: product.image != null && product.image!.isNotEmpty
                       ? Image.network(
                           product.image!,
                           fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
+                          cacheHeight: 250,
+                          cacheWidth: 250,
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
-                            return Center(
-                              child: CircularProgressIndicator(
-                                value:
-                                    loadingProgress.expectedTotalBytes != null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                    : null,
-                                strokeWidth: 2,
-                                color: const Color(0xFF324137),
+                            return Container(
+                              color: Colors.grey.shade50,
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 30,
+                                      height: 30,
+                                      child: CircularProgressIndicator(
+                                        value:
+                                            loadingProgress
+                                                    .expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                            : null,
+                                        strokeWidth: 2.5,
+                                        color: const Color(0xFF324137),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Loading',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey.shade600,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -270,39 +300,55 @@ class _PosScreenState extends State<PosScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              product.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: Color(0xFF324137),
-              ),
+          ),
+          // Product Details
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFF324137),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  product.description ?? product.category,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Rs. ${product.sellingPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: Color(0xFF35AE4A),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              product.description ?? product.category,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.black54, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Rs. ${product.sellingPrice.toStringAsFixed(2)}',
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-                color: Color(0xFF324137),
-              ),
-            ),
-            const Spacer(),
-            SizedBox(
+          ),
+          // Add to Cart Button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: SizedBox(
               width: double.infinity,
-              height: 36,
+              height: 38,
               child: ElevatedButton(
                 onPressed: () {
                   orderProvider.addToCart(
@@ -314,28 +360,35 @@ class _PosScreenState extends State<PosScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('${product.name} added to cart'),
-                      duration: const Duration(seconds: 2),
+                      duration: const Duration(milliseconds: 1500),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: const Color(0xFF35AE4A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF35AE4A),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   elevation: 0,
+                  padding: EdgeInsets.zero,
                 ),
                 child: const Text(
                   'Add to Cart',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
+                    fontSize: 13,
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -365,19 +418,33 @@ class _PosScreenState extends State<PosScreen> {
     return Container(
       width: double.infinity,
       height: double.infinity,
-      color: Colors.grey.shade100,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.image_outlined, size: 40, color: Colors.grey.shade400),
-            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.image_outlined,
+                size: 28,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'No Image',
               style: TextStyle(
-                color: Colors.grey.shade500,
+                color: Colors.grey.shade700,
                 fontSize: 11,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
