@@ -455,15 +455,53 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _buildCartButton(OrderProvider orderProvider) {
     final count = orderProvider.cartItems.length;
-    return FloatingActionButton.extended(
-      onPressed: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const CartScreen()));
-      },
-      backgroundColor: const Color(0xFF324137),
-      icon: const Icon(Icons.shopping_cart_outlined),
-      label: Text(count > 0 ? '$count item(s)' : 'Cart'),
+    return Stack(
+      alignment: Alignment.topRight,
+      children: [
+        FloatingActionButton(
+          onPressed: () {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const CartScreen()));
+          },
+          backgroundColor: const Color(0xFF324137),
+          shape: const CircleBorder(),
+          elevation: 4,
+          child: const Icon(
+            Icons.shopping_cart_outlined,
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+        if (count > 0)
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFC8E260),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                count.toString(),
+                style: const TextStyle(
+                  color: Color(0xFF324137),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
