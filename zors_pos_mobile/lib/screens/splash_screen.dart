@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'login_screen.dart';
+import '../main.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -24,7 +24,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _setupAnimation() {
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 3500), // Slower animation - 3.5 seconds
+      duration: const Duration(
+        milliseconds: 3500,
+      ), // Slower animation - 3.5 seconds
       vsync: this,
     );
 
@@ -43,9 +45,7 @@ class _SplashScreenState extends State<SplashScreen>
     Timer(const Duration(seconds: 4), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => LoginScreen(onSwitchToRegister: () {}),
-          ),
+          MaterialPageRoute(builder: (context) => const AuthGate()),
         );
       }
     });
@@ -121,7 +121,11 @@ class _SplashScreenState extends State<SplashScreen>
             width: 160,
             height: 160,
             color: Colors.grey.shade200,
-            child: const Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+            child: const Icon(
+              Icons.image_not_supported,
+              size: 60,
+              color: Colors.grey,
+            ),
           );
         },
       ),
@@ -147,10 +151,9 @@ class _SplashScreenState extends State<SplashScreen>
       opacity: _fadeAnimation,
       child: Text(
         'Point of Sale System',
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: Colors.grey,
-          letterSpacing: 1,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(color: Colors.grey, letterSpacing: 1),
       ),
     );
   }
@@ -162,9 +165,7 @@ class _SplashScreenState extends State<SplashScreen>
         width: 50,
         height: 50,
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(
-            Colors.indigo.shade700,
-          ),
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo.shade700),
           strokeWidth: 3,
         ),
       ),

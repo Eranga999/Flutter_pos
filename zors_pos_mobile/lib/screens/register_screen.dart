@@ -15,6 +15,7 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -23,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -69,10 +71,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 8),
                       const Text(
                         'Join us today',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                       const SizedBox(height: 32),
                       CustomTextField(
@@ -83,6 +82,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Name is required';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      CustomTextField(
+                        label: 'Username',
+                        hint: 'Enter your username',
+                        controller: _usernameController,
+                        prefixIcon: const Icon(Icons.person_outline),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Username is required';
+                          }
+                          if (value.length < 3) {
+                            return 'Username must be at least 3 characters';
                           }
                           return null;
                         },
@@ -159,12 +174,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           if (_formKey.currentState!.validate()) {
                             final success = await authProvider.register(
                               _nameController.text,
+                              _usernameController.text,
                               _emailController.text,
                               _passwordController.text,
                             );
                             if (success && mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Registration successful')),
+                                const SnackBar(
+                                  content: Text('Registration successful'),
+                                ),
                               );
                             }
                           }
