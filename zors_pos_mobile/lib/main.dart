@@ -9,7 +9,7 @@ import 'providers/customer_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/pos_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/customers_screen.dart';
 import 'screens/admin_home_screen.dart';
@@ -92,7 +92,7 @@ class _MainShellState extends State<MainShell> {
   int _index = 0;
 
   final List<Widget> _pages = const [
-    HomeScreen(),
+    PosScreen(),
     OrdersScreen(),
     CustomersScreen(),
   ];
