@@ -37,6 +37,21 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
+  // Refresh products from backend (used after order completion)
+  Future<void> refreshProducts() async {
+    try {
+      final result = await ApiService.getProducts();
+      if (result['success']) {
+        _products = (result['data'] as List)
+            .map((p) => Product.fromJson(p))
+            .toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error refreshing products: $e');
+    }
+  }
+
   Future<void> fetchCategories() async {
     _isLoading = true;
     _error = null;
@@ -123,5 +138,37 @@ class ProductProvider extends ChangeNotifier {
     return _products
         .where((p) => p.name.toLowerCase().contains(query.toLowerCase()))
         .toList();
+  }
+
+  // Optimistically apply stock deductions for the given product quantities
+  void applyStockDeduction(Map<String, int> qtyByProductId) {
+    bool changed = false;
+    qtyByProductId.forEach((productId, qty) {
+      final index = _products.indexWhere((p) => p.id == productId);
+      if (index != -1) {
+        final p = _products[index];
+        final newStock = (p.stock - qty);
+        _products[index] = Product(
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          category: p.category,
+          costPrice: p.costPrice,
+          sellingPrice: p.sellingPrice,
+          stock: newStock < 0 ? 0 : newStock,
+          minStock: p.minStock,
+          barcode: p.barcode,
+          image: p.image,
+          supplier: p.supplier,
+          discount: p.discount,
+          size: p.size,
+          dryfood: p.dryfood,
+          createdAt: p.createdAt,
+          updatedAt: DateTime.now(),
+        );
+        changed = true;
+      }
+    });
+    if (changed) notifyListeners();
   }
 }

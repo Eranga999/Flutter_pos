@@ -3,7 +3,7 @@ import '../models/order.dart';
 import '../services/api_service.dart';
 
 class OrderProvider extends ChangeNotifier {
-  List<OrderItem> _cartItems = [];
+  final List<OrderItem> _cartItems = [];
   double _subtotal = 0.0;
   double _tax = 0.0;
   double _discount = 0.0;
@@ -20,8 +20,15 @@ class OrderProvider extends ChangeNotifier {
   List<Order> get orders => _orders;
   bool get isLoading => _isLoading;
 
-  void addToCart(String productId, String productName, int quantity, double unitPrice) {
-    final existingIndex = _cartItems.indexWhere((item) => item.productId == productId);
+  void addToCart(
+    String productId,
+    String productName,
+    int quantity,
+    double unitPrice,
+  ) {
+    final existingIndex = _cartItems.indexWhere(
+      (item) => item.productId == productId,
+    );
 
     if (existingIndex != -1) {
       _cartItems[existingIndex] = OrderItem(
@@ -32,13 +39,15 @@ class OrderProvider extends ChangeNotifier {
         total: (_cartItems[existingIndex].quantity + quantity) * unitPrice,
       );
     } else {
-      _cartItems.add(OrderItem(
-        productId: productId,
-        productName: productName,
-        quantity: quantity,
-        unitPrice: unitPrice,
-        total: quantity * unitPrice,
-      ));
+      _cartItems.add(
+        OrderItem(
+          productId: productId,
+          productName: productName,
+          quantity: quantity,
+          unitPrice: unitPrice,
+          total: quantity * unitPrice,
+        ),
+      );
     }
     _calculateTotals();
   }
