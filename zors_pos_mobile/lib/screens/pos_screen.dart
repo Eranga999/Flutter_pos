@@ -20,7 +20,10 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    // Defer data loading until after first frame to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
   void _loadData() {
@@ -130,16 +133,38 @@ class _PosScreenState extends State<PosScreen> {
           BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 4)),
         ],
       ),
-      child: const Center(
-        child: Text(
-          'POS System',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
           ),
-        ),
+          const Expanded(
+            child: Center(
+              child: Text(
+                'POS System',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 40), // Balance the back button width
+        ],
       ),
     );
   }
