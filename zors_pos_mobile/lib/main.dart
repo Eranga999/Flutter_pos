@@ -8,10 +8,8 @@ import 'providers/customer_provider.dart';
 
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
-import 'screens/register_screen.dart';
 import 'screens/pos_screen.dart';
 import 'screens/orders_screen.dart';
-import 'screens/customers_screen.dart';
 import 'screens/admin_home_screen.dart';
 
 void main() {
@@ -69,13 +67,9 @@ class _AuthGateState extends State<AuthGate> {
           return const MainShell();
         }
 
-        return showLogin
-            ? LoginScreen(
-                onSwitchToRegister: () => setState(() => showLogin = false),
-              )
-            : RegisterScreen(
-                onSwitchToLogin: () => setState(() => showLogin = true),
-              );
+        return LoginScreen(
+          onSwitchToRegister: () => setState(() => showLogin = false),
+        );
       },
     );
   }
@@ -91,11 +85,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  final List<Widget> _pages = const [
-    PosScreen(),
-    OrdersScreen(),
-    CustomersScreen(),
-  ];
+  final List<Widget> _pages = const [PosScreen(), OrdersScreen()];
 
   @override
   Widget build(BuildContext context) {
@@ -116,11 +106,6 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: 'Orders',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_alt_outlined),
-            selectedIcon: Icon(Icons.people_alt),
-            label: 'Customers',
           ),
         ],
       ),

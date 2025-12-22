@@ -258,6 +258,26 @@ class ApiService {
     }
   }
 
+  // DISCOUNT ENDPOINTS
+  static Future<Map<String, dynamic>> getDiscounts() async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/discounts'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'message': 'Failed to fetch discounts'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   // CUSTOMER ENDPOINTS
   static Future<Map<String, dynamic>> getCustomers() async {
     try {
