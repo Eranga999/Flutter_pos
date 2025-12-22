@@ -33,7 +33,7 @@ router.get('/:id', verifyToken, async (req: Request, res: Response) => {
 // Create order
 router.post('/', verifyToken, async (req: Request, res: Response) => {
   try {
-    const { cart, orderType, totalAmount, paymentDetails } = req.body;
+    const { cart, orderType, totalAmount, paymentDetails, discountPercentage } = req.body;
 
     if (!cart || !orderType || !totalAmount) {
       return res.status(400).json({ message: 'Required fields missing' });
@@ -48,6 +48,9 @@ router.post('/', verifyToken, async (req: Request, res: Response) => {
       }
     }
 
+    // Extract kitchen notes from payment details
+    const kitchenNote = paymentDetails?.notes || '';
+
     const order = new Order({
       name: `Order ${Date.now()}`,
       cart,
@@ -56,6 +59,8 @@ router.post('/', verifyToken, async (req: Request, res: Response) => {
       paymentDetails,
       cashier: req.user,
       status: 'active',
+      kitchenNote,
+      discountPercentage: discountPercentage || 0,
     });
 
     await order.save();
