@@ -2,7 +2,6 @@ import './setupEnv';
 import express, { Express } from 'express';
 import cors from 'cors';
 import { connectDB } from './config/mongodb';
-import { cloudinaryConnection, cloudinaryEnabled } from './config/cloudinary';
 import { errorHandler } from './middleware/errorHandler';
 
 // Routes
@@ -28,11 +27,6 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
-
-    // Connect to Cloudinary when configured
-    if (cloudinaryEnabled) {
-      await cloudinaryConnection();
-    }
 
     // Routes
     app.use('/api/auth', authRoutes);
@@ -63,7 +57,6 @@ const startServer = async () => {
 
     // Start server
     app.listen(PORT, () => {
-      const cloudinaryStatus = cloudinaryEnabled ? 'Connected (ok)' : 'Skipped (not configured)';
       console.log([
         '--------------------------------------------------',
         'ZORS POS API Server Started Successfully',
@@ -71,7 +64,6 @@ const startServer = async () => {
         `API Base URL: http://localhost:${PORT}/api`,
         `Environment: ${process.env.NODE_ENV || 'development'}`,
         'Database: Connected (ok)',
-        `Cloudinary: ${cloudinaryStatus}`,
         '--------------------------------------------------',
       ].join('\n'));
     });
