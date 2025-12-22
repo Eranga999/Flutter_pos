@@ -216,6 +216,79 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> createCategory(String name) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/categories'),
+        headers: headers,
+        body: jsonEncode({'name': name}),
+      );
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['message'] ?? 'Failed to create category',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateCategory(
+    String id,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.put(
+        Uri.parse('$baseUrl/categories/$id'),
+        headers: headers,
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to update category',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> deleteCategory(String id) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.delete(
+        Uri.parse('$baseUrl/categories/$id'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': 'Category deleted'};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to delete category',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   // ORDER ENDPOINTS
   static Future<Map<String, dynamic>> createOrder(
     Map<String, dynamic> orderData,

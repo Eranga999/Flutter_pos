@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'pos_screen.dart';
+import 'category_screen.dart';
+import 'reports_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -91,10 +93,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           context,
                           label: 'Reports',
                           onTap: () {
-                            // Navigate to Reports screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Reports feature coming soon'),
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const ReportsScreen(),
                               ),
                             );
                           },
@@ -103,10 +104,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           context,
                           label: 'Category',
                           onTap: () {
-                            // Navigate to Category screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Category feature coming soon'),
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const CategoryScreen(),
                               ),
                             );
                           },

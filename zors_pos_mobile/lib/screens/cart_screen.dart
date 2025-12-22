@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
+import '../providers/product_provider.dart';
 import '../services/api_service.dart';
 import '../models/discount.dart';
 import 'checkout_screen.dart';
@@ -513,6 +514,32 @@ class _CartScreenState extends State<CartScreen> {
                                                 ),
                                                 IconButton(
                                                   onPressed: () {
+                                                    final product = context
+                                                        .read<ProductProvider>()
+                                                        .getProductById(
+                                                          item.productId,
+                                                        );
+                                                    final maxStock =
+                                                        product?.stock ?? 0;
+
+                                                    if (maxStock == 0 ||
+                                                        item.quantity >=
+                                                            maxStock) {
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            'Cannot exceed available stock (Max: $maxStock)',
+                                                          ),
+                                                          behavior:
+                                                              SnackBarBehavior
+                                                                  .floating,
+                                                        ),
+                                                      );
+                                                      return;
+                                                    }
+
                                                     context
                                                         .read<OrderProvider>()
                                                         .updateCartItemQuantity(
