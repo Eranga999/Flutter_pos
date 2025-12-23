@@ -103,7 +103,7 @@ class ReportsProvider extends ChangeNotifier {
               orderDate.month == now.month &&
               orderDate.day == now.day;
           if (isToday) {
-            _todayRevenue += (totalAmount as num).toDouble();
+            _todayRevenue += (totalAmount).toDouble();
           }
         } catch (_) {}
 
