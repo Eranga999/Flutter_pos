@@ -16,70 +16,109 @@ class CategoryProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    final res = await ApiService.getCategories();
-    if (res['success'] == true) {
-      _categories
-        ..clear()
-        ..addAll(
-          (res['data'] as List<dynamic>).map(
-            (j) => Category.fromJson(j as Map<String, dynamic>),
-          ),
-        );
-    } else {
-      _error = res['message']?.toString() ?? 'Failed to load categories';
-    }
+    try {
+      final res = await ApiService.getCategories();
+      if (res['success'] == true) {
+        final data = res['data'];
+        _categories.clear();
 
-    _loading = false;
-    notifyListeners();
+        if (data is List) {
+          _categories.addAll(
+            data.map((j) => Category.fromJson(j as Map<String, dynamic>)),
+          );
+        }
+        _error = null;
+      } else {
+        _error = res['message']?.toString() ?? 'Failed to load categories';
+      }
+    } catch (e) {
+      _error = 'Error fetching categories: $e';
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> createCategory(String name) async {
     _error = null;
     notifyListeners();
 
-    final res = await ApiService.createCategory(name);
-    if (res['success'] == true) {
-      final data = res['data'];
-      final catJson = (data is Map<String, dynamic>) && data['category'] != null
-          ? data['category'] as Map<String, dynamic>
-          : data as Map<String, dynamic>;
-      _categories.add(Category.fromJson(catJson));
-      notifyListeners();
-      return true;
-    } else {
-      _error = res['message']?.toString() ?? 'Failed to create category';
+    try {
+      final res = await ApiService.createCategory(name);
+      if (res['success'] == true) {
+        final data = res['data'];
+        // Handle different response formats
+        Map<String, dynamic>? catJson;
+        if (data is Map<String, dynamic>) {
+          catJson =
+              data['category'] as Map<String, dynamic>? ??
+              data['data'] as Map<String, dynamic>? ??
+              data;
+        }
+        if (catJson != null) {
+          _categories.add(Category.fromJson(catJson));
+          notifyListeners();
+        }
+        return true;
+      } else {
+        _error = res['message']?.toString() ?? 'Failed to create category';
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = 'Error creating category: $e';
       notifyListeners();
       return false;
     }
   }
 
   Future<bool> updateCategory(String id, String name) async {
-    final res = await ApiService.updateCategory(id, {'name': name});
-    if (res['success'] == true) {
-      final updated = Category.fromJson(
-        (res['data']['category'] ?? res['data']) as Map<String, dynamic>,
-      );
-      final idx = _categories.indexWhere((c) => c.id == id);
-      if (idx != -1) {
-        _categories[idx] = updated;
-        notifyListeners();
+    try {
+      final res = await ApiService.updateCategory(id, {'name': name});
+      if (res['success'] == true) {
+        final data = res['data'];
+        Map<String, dynamic>? catJson;
+        if (data is Map<String, dynamic>) {
+          catJson =
+              data['category'] as Map<String, dynamic>? ??
+              data['data'] as Map<String, dynamic>? ??
+              data;
+        }
+        if (catJson != null) {
+          final updated = Category.fromJson(catJson);
+          final idx = _categories.indexWhere((c) => c.id == id);
+          if (idx != -1) {
+            _categories[idx] = updated;
+            notifyListeners();
+          }
+        }
+        return true;
       }
-      return true;
+      _error = res['message']?.toString();
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Error updating category: $e';
+      notifyListeners();
+      return false;
     }
-    _error = res['message']?.toString();
-    notifyListeners();
-    return false;
   }
 
   Future<bool> deleteCategory(String id) async {
-    final res = await ApiService.deleteCategory(id);
-    if (res['success'] == true) {
-      _categories.removeWhere((c) => c.id == id);
+    try {
+      final res = await ApiService.deleteCategory(id);
+      if (res['success'] == true) {
+        _categories.removeWhere((c) => c.id == id);
+        notifyListeners();
+        return true;
+      }
+      _error = res['message']?.toString();
       notifyListeners();
-      return true;
+      return false;
+    } catch (e) {
+      _error = 'Error deleting category: $e';
+      notifyListeners();
+      return false;
     }
-    _error = res['message']?.toString();
-    notifyListeners();
-    return false;
   }
 }

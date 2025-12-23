@@ -59,13 +59,16 @@ class ProductProvider extends ChangeNotifier {
 
     try {
       final result = await ApiService.getCategories();
-      if (result['success']) {
-        _categories = (result['data'] as List)
-            .map((c) => Category.fromJson(c))
-            .toList();
+      if (result['success'] == true) {
+        final data = result['data'];
+        if (data is List) {
+          _categories = data
+              .map((c) => Category.fromJson(c as Map<String, dynamic>))
+              .toList();
+        }
         _error = null;
       } else {
-        _error = result['message'];
+        _error = result['message']?.toString();
       }
     } catch (e) {
       _error = e.toString();

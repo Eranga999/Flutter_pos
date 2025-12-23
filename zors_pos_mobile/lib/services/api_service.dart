@@ -212,6 +212,12 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        // Backend returns { success: true, data: [...] }
+        // Extract the data array from backend response
+        if (data is Map<String, dynamic> && data['data'] != null) {
+          return {'success': true, 'data': data['data']};
+        }
+        // If backend returns array directly
         return {'success': true, 'data': data};
       } else {
         return {'success': false, 'message': 'Failed to fetch categories'};
