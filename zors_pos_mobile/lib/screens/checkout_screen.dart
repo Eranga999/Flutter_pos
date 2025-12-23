@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
 import '../services/api_service.dart';
@@ -19,19 +21,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _cashGivenController = TextEditingController();
   final TextEditingController _cardReferenceController =
       TextEditingController();
+  final TextEditingController _customerNameController = TextEditingController();
 
   @override
   void dispose() {
     _notesController.dispose();
     _cashGivenController.dispose();
     _cardReferenceController.dispose();
+    _customerNameController.dispose();
     super.dispose();
+  }
+
+  Future<Map<String, dynamic>?> _getCurrentUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJson = prefs.getString('userData');
+      if (userJson != null) {
+        return jsonDecode(userJson) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('Error getting current user: $e');
+    }
+    return null;
   }
 
   Future<void> _processPayment() async {
     if (_selectedPaymentMethod.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a payment method')),
+      );
+      return;
+    }
+
+    // Validate customer name
+    if (_customerNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter customer name')),
       );
       return;
     }
@@ -172,7 +197,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Validate cash payment: ensure received cash >= total
     if (_selectedPaymentMethod == 'cash') {
-      final orderProvider = context.read<OrderProvider>();
       final total =
           orderProvider.cartItems.fold<double>(
             0.0,
@@ -204,41 +228,69 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _isProcessing = true);
 
     try {
-      final orderProvider = context.read<OrderProvider>();
       final subtotal = orderProvider.cartItems.fold<double>(
         0.0,
         (sum, item) => sum + (item.unitPrice * item.quantity),
       );
       final total = subtotal - orderProvider.discount;
 
-      // Prepare order data for backend
+      // Get current user info
+      final currentUser = await _getCurrentUser();
+
+      // Prepare order data matching backend expectations
       final discountPercentage = subtotal > 0
           ? (orderProvider.discount / subtotal) * 100
           : 0.0;
 
+      // Build cart items matching backend CartItem interface
+      final cartItems = orderProvider.cartItems.map((item) {
+        final product = productProvider.getProductById(item.productId);
+        return {
+          'product': {
+            '_id': item.productId,
+            'name': item.productName,
+            'sellingPrice': item.unitPrice,
+            'stock': product?.stock ?? 0,
+          },
+          'quantity': item.quantity,
+        };
+      }).toList();
+
+      // Build payment details
+      final paymentDetails = <String, dynamic>{
+        'method': _selectedPaymentMethod,
+      };
+
+      if (_selectedPaymentMethod == 'cash') {
+        paymentDetails['cashReceived'] =
+            double.tryParse(_cashGivenController.text.trim()) ?? 0.0;
+        paymentDetails['change'] =
+            (paymentDetails['cashReceived'] as double) - total;
+      } else if (_selectedPaymentMethod == 'card') {
+        paymentDetails['cardReferenceNumber'] = _cardReferenceController.text
+            .trim();
+      }
+
+      // Store cart items before clearing for receipt
+      final cartItemsForReceipt = List.from(orderProvider.cartItems);
+      final discountForReceipt = orderProvider.discount;
+
       final orderData = {
-        'cart': orderProvider.cartItems
-            .map(
-              (item) => {
-                'productId': item.productId,
-                'productName': item.productName,
-                'quantity': item.quantity,
-                'unitPrice': item.unitPrice,
-                if (_selectedPaymentMethod == 'card')
-                  'cardReferenceNumber': _cardReferenceController.text.trim(),
-              },
-            )
-            .toList(),
+        'name': _customerNameController.text.trim(),
+        'cart': cartItems,
         'orderType': 'takeaway',
         'totalAmount': total,
         'discountPercentage': discountPercentage,
-        'paymentDetails': {
-          'method': _selectedPaymentMethod,
-          'notes': _notesController.text,
-          if (_selectedPaymentMethod == 'cash')
-            'cashReceived':
-                double.tryParse(_cashGivenController.text.trim()) ?? 0.0,
-        },
+        'paymentDetails': paymentDetails,
+        'kitchenNote': _notesController.text.isNotEmpty
+            ? _notesController.text
+            : null,
+        'cashier': currentUser != null
+            ? {
+                '_id': currentUser['_id'] ?? currentUser['id'],
+                'username': currentUser['username'] ?? 'Unknown',
+              }
+            : {'_id': 'guest', 'username': 'Guest'},
       };
 
       // Call backend API to create order
@@ -248,12 +300,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() => _isProcessing = false);
 
         if (result['success'] == true) {
-          // Update stock after successful order
-          final stockDeductions = <String, int>{};
-          for (var item in orderProvider.cartItems) {
-            stockDeductions[item.productId] = item.quantity;
-          }
-          context.read<ProductProvider>().applyStockDeduction(stockDeductions);
+          // Refresh products to get updated stock
+          await productProvider.refreshProducts();
 
           // Navigate to receipt screen
           final cashGiven = _selectedPaymentMethod == 'cash'
@@ -261,14 +309,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               : null;
           final change = cashGiven != null ? cashGiven - total : null;
 
+          // Clear the cart
+          orderProvider.clearCart();
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => ReceiptScreen(
-                orderId: result['data']?['order']?['_id'] ?? 'N/A',
-                items: orderProvider.cartItems,
+                orderId:
+                    result['data']?['order']?['_id'] ??
+                    result['data']?['_id'] ??
+                    'N/A',
+                items: cartItemsForReceipt,
                 subtotal: subtotal,
-                discount: orderProvider.discount,
+                discount: discountForReceipt,
                 total: total,
                 paymentMethod: _selectedPaymentMethod,
                 cashReceived: cashGiven,
@@ -389,6 +443,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Customer Name Section
+                        const Text(
+                          'Customer Name *',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF324137),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _customerNameController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter customer name',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1.6,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1.6,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: Color(0xFFC8E260),
+                                width: 1.6,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.all(12),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
                         // Order Summary Section
                         Container(
                           padding: const EdgeInsets.all(16),
@@ -428,32 +525,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              item.productName,
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            Text(
-                                              'x${item.quantity}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
-                                            ),
-                                          ],
+                                        child: Text(
+                                          '${item.productName} x${item.quantity}',
+                                          style: const TextStyle(fontSize: 14),
                                         ),
                                       ),
                                       Text(
                                         'Rs. ${(item.unitPrice * item.quantity).toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 14,
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ],
@@ -575,10 +656,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     fillColor: Colors.white,
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                        width: 1.6,
-                                      ),
+                                      borderSide: const BorderSide(width: 1.6),
                                     ),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(12),
@@ -600,15 +678,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 Builder(
                                   builder: (context) {
-                                    final orderProvider = context
-                                        .read<OrderProvider>();
-                                    final subtotal = orderProvider.cartItems
-                                        .fold<double>(
-                                          0.0,
-                                          (sum, item) =>
-                                              sum +
-                                              (item.unitPrice * item.quantity),
-                                        );
                                     final discount = orderProvider.discount;
                                     final total = subtotal - discount;
                                     final cashGiven =
@@ -623,14 +692,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
                                         color: insufficient
-                                            ? const Color(0xFFFFF5F5)
+                                            ? const Color(0xFFFFEBEE)
                                             : const Color(0xFFF4FFF0),
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                           color: insufficient
-                                              ? Colors.redAccent
+                                              ? Colors.red
                                               : const Color(0xFFC8E260),
-                                          width: 2,
+                                          width: 1.5,
                                         ),
                                       ),
                                       child: Row(
@@ -639,26 +708,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         children: [
                                           Text(
                                             insufficient
-                                                ? 'Insufficient Cash'
-                                                : 'Change to Return',
+                                                ? 'Insufficient'
+                                                : 'Change:',
                                             style: TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
                                               color: insufficient
-                                                  ? Colors.redAccent
+                                                  ? Colors.red
                                                   : const Color(0xFF324137),
                                             ),
                                           ),
                                           Text(
                                             insufficient
-                                                ? 'Rs. ${(total - cashGiven).toStringAsFixed(2)} needed'
-                                                : 'Rs. ${change >= 0 ? change.toStringAsFixed(2) : '0.00'}',
+                                                ? 'Rs. ${(total - cashGiven).toStringAsFixed(2)} more needed'
+                                                : 'Rs. ${change.toStringAsFixed(2)}',
                                             style: TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
                                               color: insufficient
-                                                  ? Colors.redAccent
-                                                  : const Color(0xFF324137),
+                                                  ? Colors.red
+                                                  : const Color(0xFF35AE4A),
                                             ),
                                           ),
                                         ],
@@ -742,41 +811,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       ),
                                     ),
                                     contentPadding: const EdgeInsets.all(12),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF0F8FF),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: const Color(0xFF324137),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.info_outline,
-                                        color: Color(0xFF324137),
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          (_cardReferenceController.text ?? '')
-                                                  .isNotEmpty
-                                              ? 'Reference: ${_cardReferenceController.text}'
-                                              : 'Reference number is required',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey[700],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
                                   ),
                                 ),
                               ],
@@ -897,7 +931,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
-                                const Text('Processing Payment...'),
+                                const Text(
+                                  'Processing Payment...',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                               ],
                             )
                           : Text(

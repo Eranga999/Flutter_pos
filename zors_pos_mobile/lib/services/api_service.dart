@@ -48,6 +48,11 @@ class ApiService {
         if (data['token'] != null) {
           await saveToken(data['token']);
         }
+        // Save user data for later use
+        if (data['user'] != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('userData', jsonEncode(data['user']));
+        }
         return {'success': true, 'data': data};
       } else {
         final errorData = jsonDecode(response.body);
@@ -304,8 +309,16 @@ class ApiService {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return {'success': true, 'data': data};
+      } else if (response.statusCode == 207) {
+        // Partial success - some stock updates failed
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data, 'warnings': data['errors']};
       } else {
-        return {'success': false, 'message': 'Failed to create order: ${orderData}'};
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to create order',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
