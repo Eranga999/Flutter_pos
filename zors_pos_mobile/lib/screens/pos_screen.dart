@@ -233,6 +233,13 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildProductCard(dynamic product, OrderProvider orderProvider) {
+    // Calculate available stock (original stock minus items in cart)
+    final cartItem = orderProvider.cartItems
+        .where((i) => i.productId == product.id)
+        .toList();
+    final cartQuantity = cartItem.isNotEmpty ? cartItem.first.quantity : 0;
+    final availableStock = (product.stock ?? 0) - cartQuantity;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -255,7 +262,9 @@ class _PosScreenState extends State<PosScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _stockBadge(product.stock),
+                _stockBadge(
+                  availableStock,
+                ), // Use availableStock instead of product.stock
                 Icon(Icons.more_vert, size: 18, color: Colors.grey.shade400),
               ],
             ),
@@ -375,28 +384,8 @@ class _PosScreenState extends State<PosScreen> {
               width: double.infinity,
               height: 38,
               child: ElevatedButton(
-                onPressed: (product.stock ?? 0) > 0
+                onPressed: availableStock > 0
                     ? () {
-                        final stock = product.stock ?? 0;
-                        final existing = orderProvider.cartItems
-                            .where((i) => i.productId == product.id)
-                            .toList();
-                        final currentQty = existing.isNotEmpty
-                            ? existing.first.quantity
-                            : 0;
-
-                        if (currentQty >= stock) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Cannot add more than available stock (Max: $stock)',
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
-                        }
-
                         orderProvider.addToCart(
                           product.id,
                           product.name,
@@ -424,7 +413,7 @@ class _PosScreenState extends State<PosScreen> {
                   elevation: 0,
                   padding: EdgeInsets.zero,
                 ),
-                child: (product.stock ?? 0) > 0
+                child: availableStock > 0
                     ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -447,7 +436,7 @@ class _PosScreenState extends State<PosScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              '${product.stock}',
+                              '$availableStock',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
