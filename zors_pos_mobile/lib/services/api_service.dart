@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:5000/api';
+  static const String baseUrl = 'http://10.0.2.2:5000/api';
   // For Android emulator use: http://10.0.2.2:5000/api
   // For Windows desktop use: http://localhost:5000/api
   // For physical device, change localhost to your computer's IP
@@ -296,7 +296,7 @@ class ApiService {
     try {
       final headers = await getHeaders();
       final response = await http.post(
-        Uri.parse('$baseUrl/orders'),
+        Uri.parse('$baseUrl/order'),
         headers: headers,
         body: jsonEncode(orderData),
       );
@@ -305,7 +305,7 @@ class ApiService {
         final data = jsonDecode(response.body);
         return {'success': true, 'data': data};
       } else {
-        return {'success': false, 'message': 'Failed to create order'};
+        return {'success': false, 'message': 'Failed to create order: ${orderData}'};
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
@@ -316,7 +316,7 @@ class ApiService {
     try {
       final headers = await getHeaders();
       final response = await http.get(
-        Uri.parse('$baseUrl/orders'),
+        Uri.parse('$baseUrl/order'),
         headers: headers,
       );
 
