@@ -375,25 +375,47 @@ class _PosScreenState extends State<PosScreen> {
               width: double.infinity,
               height: 38,
               child: ElevatedButton(
-                onPressed: () {
-                  orderProvider.addToCart(
-                    product.id,
-                    product.name,
-                    1,
-                    product.sellingPrice,
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${product.name} added to cart'),
-                      duration: const Duration(milliseconds: 1500),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: const Color(0xFF35AE4A),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  );
-                },
+                onPressed: (product.stock ?? 0) > 0
+                    ? () {
+                        final stock = product.stock ?? 0;
+                        final existing = orderProvider.cartItems
+                            .where((i) => i.productId == product.id)
+                            .toList();
+                        final currentQty = existing.isNotEmpty
+                            ? existing.first.quantity
+                            : 0;
+
+                        if (currentQty >= stock) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Cannot add more than available stock (Max: $stock)',
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        orderProvider.addToCart(
+                          product.id,
+                          product.name,
+                          1,
+                          product.sellingPrice,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${product.name} added to cart'),
+                            duration: const Duration(milliseconds: 1500),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: const Color(0xFF35AE4A),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF35AE4A),
                   shape: RoundedRectangleBorder(
@@ -402,14 +424,47 @@ class _PosScreenState extends State<PosScreen> {
                   elevation: 0,
                   padding: EdgeInsets.zero,
                 ),
-                child: const Text(
-                  'Add to Cart',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    fontSize: 13,
-                  ),
-                ),
+                child: (product.stock ?? 0) > 0
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Add to Cart',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${product.stock}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : const Text(
+                        'Out of Stock',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
               ),
             ),
           ),

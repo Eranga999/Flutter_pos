@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
 import '../services/api_service.dart';
+import 'receipt_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -16,11 +17,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isProcessing = false;
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _cashGivenController = TextEditingController();
+  final TextEditingController _cardReferenceController =
+      TextEditingController();
 
   @override
   void dispose() {
     _notesController.dispose();
     _cashGivenController.dispose();
+    _cardReferenceController.dispose();
     super.dispose();
   }
 
@@ -187,6 +191,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
 
+    // Validate card payment: ensure reference number is provided
+    if (_selectedPaymentMethod == 'card') {
+      if (_cardReferenceController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter card reference number')),
+        );
+        return;
+      }
+    }
+
     setState(() => _isProcessing = true);
 
     try {
@@ -210,6 +224,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 'productName': item.productName,
                 'quantity': item.quantity,
                 'unitPrice': item.unitPrice,
+                if (_selectedPaymentMethod == 'card')
+                  'cardReferenceNumber': _cardReferenceController.text.trim(),
               },
             )
             .toList(),
@@ -239,97 +255,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           }
           context.read<ProductProvider>().applyStockDeduction(stockDeductions);
 
-          // Show success dialog
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: const Text('Payment Successful'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 32),
-                      SizedBox(width: 12),
-                      Text(
-                        'Order Confirmed!',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF324137),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Order ID: ${result['data']?['order']?['_id'] ?? 'N/A'}',
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Payment Method: ${_selectedPaymentMethod.toUpperCase()}',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  if (_selectedPaymentMethod == 'cash') ...[
-                    const SizedBox(height: 8),
-                    Builder(
-                      builder: (context) {
-                        final cashGiven =
-                            double.tryParse(_cashGivenController.text.trim()) ??
-                            0.0;
-                        final change = cashGiven - total;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Cash Received: Rs. ${cashGiven.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Change to Return: Rs. ${change.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Thank you for your purchase!',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
+          // Navigate to receipt screen
+          final cashGiven = _selectedPaymentMethod == 'cash'
+              ? double.tryParse(_cashGivenController.text.trim()) ?? 0.0
+              : null;
+          final change = cashGiven != null ? cashGiven - total : null;
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ReceiptScreen(
+                orderId: result['data']?['order']?['_id'] ?? 'N/A',
+                items: orderProvider.cartItems,
+                subtotal: subtotal,
+                discount: orderProvider.discount,
+                total: total,
+                paymentMethod: _selectedPaymentMethod,
+                cashReceived: cashGiven,
+                change: change,
               ),
-              actions: [
-                ElevatedButton(
-                  onPressed: () {
-                    context.read<OrderProvider>().clearCart();
-                    Navigator.pop(context); // Close dialog
-                    Navigator.pop(context); // Close checkout
-                    Navigator.pop(context); // Close cart
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC8E260),
-                    foregroundColor: Colors.black,
-                  ),
-                  child: const Text('Done'),
-                ),
-              ],
             ),
           );
         } else {
@@ -721,6 +665,119 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       ),
                                     );
                                   },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // Card Payment Details
+                        if (_selectedPaymentMethod == 'card') ...[
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.grey[200]!,
+                                width: 0.8,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.06),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Card Reference Number',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF324137),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Enter the transaction reference or authorization code',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _cardReferenceController,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  onChanged: (_) => setState(() {}),
+                                  decoration: InputDecoration(
+                                    hintText: 'e.g., TXN123456789',
+                                    prefixIcon: const Icon(Icons.credit_card),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
+                                        width: 1.6,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[300]!,
+                                        width: 1.6,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFFC8E260),
+                                        width: 1.6,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.all(12),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0F8FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFF324137),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.info_outline,
+                                        color: Color(0xFF324137),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          (_cardReferenceController.text ?? '')
+                                                  .isNotEmpty
+                                              ? 'Reference: ${_cardReferenceController.text}'
+                                              : 'Reference number is required',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
