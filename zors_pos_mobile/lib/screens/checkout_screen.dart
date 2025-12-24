@@ -21,7 +21,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _cashGivenController = TextEditingController();
   final TextEditingController _cardReferenceController =
       TextEditingController();
-  final TextEditingController _customerNameController = TextEditingController();
+  final TextEditingController _customerNameController = TextEditingController(text: "CUSTOMER");
 
   @override
   void dispose() {

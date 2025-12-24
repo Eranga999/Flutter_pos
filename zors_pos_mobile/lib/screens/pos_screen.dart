@@ -523,7 +523,11 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildCartButton(OrderProvider orderProvider) {
-    final count = orderProvider.cartItems.length;
+    // Calculate total quantity of all items in cart
+    final count = orderProvider.cartItems.fold<int>(
+      0,
+      (sum, item) => sum + item.quantity,
+    );
     return Stack(
       alignment: Alignment.topRight,
       children: [
