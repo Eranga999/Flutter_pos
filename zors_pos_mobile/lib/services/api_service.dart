@@ -301,7 +301,9 @@ class ApiService {
   }
 
   // ORDER ENDPOINTS
-  static Future<Map<String, dynamic>> createOrder(Map<String, dynamic> orderData) async {
+  static Future<Map<String, dynamic>> createOrder(
+    Map<String, dynamic> orderData,
+  ) async {
     try {
       final headers = await getHeaders();
       final response = await http.post(
@@ -317,7 +319,10 @@ class ApiService {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['error'] ?? errorData['message'] ?? 'Failed to create order'
+          'message':
+              errorData['error'] ??
+              errorData['message'] ??
+              'Failed to create order',
         };
       }
     } catch (e) {
@@ -344,7 +349,9 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> updateStock(List<Map<String, dynamic>> cartItems) async {
+  static Future<Map<String, dynamic>> updateStock(
+    List<Map<String, dynamic>> cartItems,
+  ) async {
     try {
       final headers = await getHeaders();
       final response = await http.post(
@@ -360,7 +367,7 @@ class ApiService {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['error'] ?? 'Failed to update stock'
+          'message': errorData['error'] ?? 'Failed to update stock',
         };
       }
     } catch (e) {
