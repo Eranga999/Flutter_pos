@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:5000/api';
+  static const String baseUrl = 'http://10.0.2.2:5000/api';
   // For Android emulator use: http://10.0.2.2:5000/api
-  // For Windows desktop use: http://localhost:5000/api
+  // For Windows desktop use: http://188.166.230.230:5000/api
   // For physical device, change localhost to your computer's IP
 
   static Future<String?> getToken() async {
@@ -47,6 +47,11 @@ class ApiService {
         final data = jsonDecode(response.body);
         if (data['token'] != null) {
           await saveToken(data['token']);
+        }
+        // Save user data for later use
+        if (data['user'] != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('userData', jsonEncode(data['user']));
         }
         return {'success': true, 'data': data};
       } else {
@@ -207,6 +212,12 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        // Backend returns { success: true, data: [...] }
+        // Extract the data array from backend response
+        if (data is Map<String, dynamic> && data['data'] != null) {
+          return {'success': true, 'data': data['data']};
+        }
+        // If backend returns array directly
         return {'success': true, 'data': data};
       } else {
         return {'success': false, 'message': 'Failed to fetch categories'};
@@ -296,16 +307,23 @@ class ApiService {
     try {
       final headers = await getHeaders();
       final response = await http.post(
-        Uri.parse('$baseUrl/orders'),
+        Uri.parse('$baseUrl/order'),
         headers: headers,
         body: jsonEncode(orderData),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return {'success': true, 'data': data};
       } else {
-        return {'success': false, 'message': 'Failed to create order'};
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message':
+              errorData['error'] ??
+              errorData['message'] ??
+              'Failed to create order',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
@@ -316,7 +334,7 @@ class ApiService {
     try {
       final headers = await getHeaders();
       final response = await http.get(
-        Uri.parse('$baseUrl/orders'),
+        Uri.parse('$baseUrl/order'),
         headers: headers,
       );
 
@@ -325,6 +343,32 @@ class ApiService {
         return {'success': true, 'data': data};
       } else {
         return {'success': false, 'message': 'Failed to fetch orders'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateStock(
+    List<Map<String, dynamic>> cartItems,
+  ) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/order/update-stock'),
+        headers: headers,
+        body: jsonEncode({'cartItems': cartItems}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 207) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to update stock',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
