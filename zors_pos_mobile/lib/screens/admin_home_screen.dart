@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import 'pos_screen.dart';
 import 'category_screen.dart';
 import 'reports_screen.dart';
+import 'inventory_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -72,10 +73,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                           context,
                           label: 'Inventory',
                           onTap: () {
-                            // Navigate to Inventory screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Inventory feature coming soon'),
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const InventoryScreen(),
                               ),
                             );
                           },

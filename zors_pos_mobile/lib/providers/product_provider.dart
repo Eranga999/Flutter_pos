@@ -79,7 +79,10 @@ class ProductProvider extends ChangeNotifier {
     try {
       final result = await ApiService.createProduct(product.toJson());
       if (result['success']) {
-        _products.add(Product.fromJson(result['data']));
+        final created = (result['data']?['product']) ?? result['data'];
+        if (created != null) {
+          _products.add(Product.fromJson(created));
+        }
         notifyListeners();
         return true;
       }
@@ -95,9 +98,10 @@ class ProductProvider extends ChangeNotifier {
     try {
       final result = await ApiService.updateProduct(id, product.toJson());
       if (result['success']) {
+        final updated = (result['data']?['product']) ?? result['data'];
         final index = _products.indexWhere((p) => p.id == id);
-        if (index != -1) {
-          _products[index] = Product.fromJson(result['data']);
+        if (index != -1 && updated != null) {
+          _products[index] = Product.fromJson(updated);
           notifyListeners();
         }
         return true;

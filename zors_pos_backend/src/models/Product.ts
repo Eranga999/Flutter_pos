@@ -21,7 +21,8 @@ export interface IProduct extends Document<string> {
 
 const ProductSchema = new Schema<IProduct>(
   {
-    _id: { type: String, required: true },
+    // Do not require _id; generate in pre('save') when missing
+    _id: { type: String },
     name: { type: String, required: true },
     description: { type: String },
     category: { type: String, required: true },
