@@ -301,9 +301,7 @@ class ApiService {
   }
 
   // ORDER ENDPOINTS
-  static Future<Map<String, dynamic>> createOrder(
-    Map<String, dynamic> orderData,
-  ) async {
+  static Future<Map<String, dynamic>> createOrder(Map<String, dynamic> orderData) async {
     try {
       final headers = await getHeaders();
       final response = await http.post(
@@ -312,18 +310,14 @@ class ApiService {
         body: jsonEncode(orderData),
       );
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         return {'success': true, 'data': data};
-      } else if (response.statusCode == 207) {
-        // Partial success - some stock updates failed
-        final data = jsonDecode(response.body);
-        return {'success': true, 'data': data, 'warnings': data['errors']};
       } else {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
-          'message': errorData['error'] ?? 'Failed to create order',
+          'message': errorData['error'] ?? errorData['message'] ?? 'Failed to create order'
         };
       }
     } catch (e) {
@@ -344,6 +338,30 @@ class ApiService {
         return {'success': true, 'data': data};
       } else {
         return {'success': false, 'message': 'Failed to fetch orders'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateStock(List<Map<String, dynamic>> cartItems) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/order/update-stock'),
+        headers: headers,
+        body: jsonEncode({'cartItems': cartItems}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 207) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['error'] ?? 'Failed to update stock'
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};

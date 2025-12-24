@@ -242,66 +242,106 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           ? (orderProvider.discount / subtotal) * 100
           : 0.0;
 
-      // Build cart items matching backend CartItem interface
+      // Build cart items matching backend CartItem interface exactly
+      // Backend expects: { product: { _id, shortId, name, costPrice, sellingPrice, discount, category, size, dryfood, image, stock, description, barcode, supplier }, quantity, subtotal, note }
       final cartItems = orderProvider.cartItems.map((item) {
         final product = productProvider.getProductById(item.productId);
         return {
           'product': {
             '_id': item.productId,
+            'shortId': product?.id ?? item.productId,
             'name': item.productName,
+            'costPrice': product?.costPrice ?? 0,
             'sellingPrice': item.unitPrice,
+            'discount': product?.discount ?? 0,
+            'category': product?.category ?? '',
+            'size': product?.size,
+            'dryfood': product?.dryfood ?? false,
+            'image': product?.image,
             'stock': product?.stock ?? 0,
+            'description': product?.description,
+            'barcode': product?.barcode,
+            'supplier': product?.supplier,
           },
           'quantity': item.quantity,
+          'subtotal': item.quantity * item.unitPrice,
+          'note': '',
         };
       }).toList();
 
-      // Build payment details
+      // Build payment details matching backend PaymentDetails interface
       final paymentDetails = <String, dynamic>{
         'method': _selectedPaymentMethod,
       };
 
       if (_selectedPaymentMethod == 'cash') {
-        paymentDetails['cashReceived'] =
+        final cashReceived =
             double.tryParse(_cashGivenController.text.trim()) ?? 0.0;
-        paymentDetails['change'] =
-            (paymentDetails['cashReceived'] as double) - total;
+        paymentDetails['cashGiven'] = cashReceived;
+        paymentDetails['change'] = cashReceived - total;
       } else if (_selectedPaymentMethod == 'card') {
-        paymentDetails['cardReferenceNumber'] = _cardReferenceController.text
-            .trim();
+        paymentDetails['invoiceId'] = _cardReferenceController.text.trim();
       }
 
       // Store cart items before clearing for receipt
       final cartItemsForReceipt = List.from(orderProvider.cartItems);
       final discountForReceipt = orderProvider.discount;
 
+      // Build customer object matching backend Customer interface
+      final customer = {'name': _customerNameController.text.trim()};
+
+      // Build cashier object matching backend expected format
+      final cashier = currentUser != null
+          ? {
+              '_id': currentUser['_id'] ?? currentUser['id'] ?? 'guest',
+              'username': currentUser['username'] ?? 'Unknown',
+            }
+          : {'_id': 'guest', 'username': 'Guest'};
+
+      // Build order data matching backend Order interface
       final orderData = {
         'name': _customerNameController.text.trim(),
         'cart': cartItems,
+        'customer': customer,
+        'cashier': cashier,
         'orderType': 'takeaway',
-        'totalAmount': total,
-        'discountPercentage': discountPercentage,
-        'paymentDetails': paymentDetails,
         'kitchenNote': _notesController.text.isNotEmpty
             ? _notesController.text
             : null,
-        'cashier': currentUser != null
-            ? {
-                '_id': currentUser['_id'] ?? currentUser['id'],
-                'username': currentUser['username'] ?? 'Unknown',
-              }
-            : {'_id': 'guest', 'username': 'Guest'},
+        'status': 'completed',
+        'paymentDetails': paymentDetails,
+        'tableCharge': 0,
+        'deliveryCharge': 0,
+        'discountPercentage': discountPercentage,
+        'totalAmount': total,
       };
 
       // Call backend API to create order
       final result = await ApiService.createOrder(orderData);
 
       if (mounted) {
-        setState(() => _isProcessing = false);
-
         if (result['success'] == true) {
-          // Refresh products to get updated stock
+          // After successful order creation, update stock in backend
+          final stockUpdateItems = orderProvider.cartItems.map((item) {
+            final product = productProvider.getProductById(item.productId);
+            return {
+              'product': {
+                '_id': item.productId,
+                'name': item.productName,
+                'sellingPrice': item.unitPrice,
+                'stock': product?.stock ?? 0,
+              },
+              'quantity': item.quantity,
+            };
+          }).toList();
+
+          // Update stock in backend
+          await ApiService.updateStock(stockUpdateItems);
+
+          // Refresh products to get updated stock from backend
           await productProvider.refreshProducts();
+
+          setState(() => _isProcessing = false);
 
           // Navigate to receipt screen
           final cashGiven = _selectedPaymentMethod == 'cash'
@@ -317,8 +357,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             MaterialPageRoute(
               builder: (context) => ReceiptScreen(
                 orderId:
-                    result['data']?['order']?['_id'] ??
                     result['data']?['_id'] ??
+                    result['data']?['order']?['_id'] ??
                     'N/A',
                 items: cartItemsForReceipt,
                 subtotal: subtotal,
@@ -331,6 +371,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           );
         } else {
+          setState(() => _isProcessing = false);
           // Show error
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -360,6 +401,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               0.0,
               (sum, item) => sum + (item.unitPrice * item.quantity),
             );
+            final total = subtotal - orderProvider.discount;
 
             return Column(
               children: [
@@ -491,17 +533,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: Colors.grey[200]!,
-                              width: 0.8,
+                              width: 1.6,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 8,
-                              ),
-                            ],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,12 +550,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   color: Color(0xFF324137),
                                 ),
                               ),
-                              const Divider(height: 16),
+                              const SizedBox(height: 12),
                               ...orderProvider.cartItems.map(
                                 (item) => Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                  ),
+                                  padding: const EdgeInsets.only(bottom: 8),
                                   child: Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -534,60 +568,65 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         'Rs. ${(item.unitPrice * item.quantity).toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 14,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                               ),
-                              const Divider(height: 16),
+                              const Divider(),
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text('Subtotal:'),
+                                  const Text('Subtotal'),
                                   Text(
                                     'Rs. ${subtotal.toStringAsFixed(2)}',
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Discount:'),
-                                  Text(
-                                    '- Rs. ${orderProvider.discount.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF35AE4A),
+                              if (orderProvider.discount > 0) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Discount',
+                                      style: TextStyle(color: Colors.green),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                    Text(
+                                      '- Rs. ${orderProvider.discount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               const SizedBox(height: 8),
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
-                                    'Total:',
+                                    'Total',
                                     style: TextStyle(
-                                      fontSize: 16,
+                                      fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                   Text(
-                                    'Rs. ${(subtotal - orderProvider.discount).toStringAsFixed(2)}',
+                                    'Rs. ${total.toStringAsFixed(2)}',
                                     style: const TextStyle(
-                                      fontSize: 16,
+                                      fontSize: 18,
                                       fontWeight: FontWeight.bold,
-                                      color: Color(0xFF324137),
+                                      color: Color(0xFF35AE4A),
                                     ),
                                   ),
                                 ],
@@ -618,17 +657,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: Colors.grey[200]!,
-                                width: 0.8,
+                                width: 1.6,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.06),
-                                  blurRadius: 8,
-                                ),
-                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -636,71 +669,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const Text(
                                   'Cash Received',
                                   style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
                                     color: Color(0xFF324137),
                                   ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 8),
                                 TextField(
                                   controller: _cashGivenController,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  onChanged: (_) => setState(() {}),
+                                  keyboardType: TextInputType.number,
                                   decoration: InputDecoration(
-                                    hintText:
-                                        'Enter amount received (e.g., 5000)',
+                                    hintText: 'Enter amount received',
+                                    prefixText: 'Rs. ',
                                     filled: true,
-                                    fillColor: Colors.white,
+                                    fillColor: Colors.grey[50],
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(width: 1.6),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(8),
                                       borderSide: BorderSide(
                                         color: Colors.grey[300]!,
-                                        width: 1.6,
                                       ),
                                     ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFFC8E260),
-                                        width: 1.6,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.all(12),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
-                                Builder(
-                                  builder: (context) {
-                                    final discount = orderProvider.discount;
-                                    final total = subtotal - discount;
+                                ValueListenableBuilder<TextEditingValue>(
+                                  valueListenable: _cashGivenController,
+                                  builder: (context, value, _) {
                                     final cashGiven =
-                                        double.tryParse(
-                                          _cashGivenController.text.trim(),
-                                        ) ??
+                                        double.tryParse(value.text.trim()) ??
                                         0.0;
                                     final change = cashGiven - total;
-                                    final insufficient =
-                                        cashGiven > 0 && cashGiven < total;
+                                    final insufficient = change < 0;
                                     return Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
                                         color: insufficient
-                                            ? const Color(0xFFFFEBEE)
-                                            : const Color(0xFFF4FFF0),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: insufficient
-                                              ? Colors.red
-                                              : const Color(0xFFC8E260),
-                                          width: 1.5,
-                                        ),
+                                            ? Colors.red[50]
+                                            : Colors.green[50],
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Row(
                                         mainAxisAlignment:
@@ -747,17 +753,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: Colors.grey[200]!,
-                                width: 0.8,
+                                width: 1.6,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.06),
-                                  blurRadius: 8,
-                                ),
-                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -765,52 +765,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const Text(
                                   'Card Reference Number',
                                   style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
                                     color: Color(0xFF324137),
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Text(
-                                  'Enter the transaction reference or authorization code',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
                                 TextField(
                                   controller: _cardReferenceController,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
-                                  onChanged: (_) => setState(() {}),
                                   decoration: InputDecoration(
-                                    hintText: 'e.g., TXN123456789',
-                                    prefixIcon: const Icon(Icons.credit_card),
+                                    hintText: 'Enter reference number',
                                     filled: true,
-                                    fillColor: Colors.white,
+                                    fillColor: Colors.grey[50],
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(8),
                                       borderSide: BorderSide(
                                         color: Colors.grey[300]!,
-                                        width: 1.6,
                                       ),
                                     ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey[300]!,
-                                        width: 1.6,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFFC8E260),
-                                        width: 1.6,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.all(12),
                                   ),
                                 ),
                               ],
@@ -870,26 +842,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: const Color(0xFFC8E260),
-                              width: 2,
+                              width: 1.6,
                             ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text(
-                                'Total Amount',
+                                'Total to Pay',
                                 style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF324137),
                                 ),
                               ),
                               Text(
-                                'Rs. ${(subtotal - orderProvider.discount).toStringAsFixed(2)}',
+                                'Rs. ${total.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.bold,
-                                  color: Color(0xFF324137),
+                                  color: Color(0xFF35AE4A),
                                 ),
                               ),
                             ],
@@ -921,19 +893,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 const SizedBox(
-                                  width: 20,
-                                  height: 20,
+                                  width: 24,
+                                  height: 24,
                                   child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
+                                    color: Colors.white,
                                     strokeWidth: 2,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 const Text(
-                                  'Processing Payment...',
-                                  style: TextStyle(color: Colors.white),
+                                  'Processing...',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ],
                             )
