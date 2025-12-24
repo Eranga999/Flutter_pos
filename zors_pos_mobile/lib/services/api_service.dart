@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static const String baseUrl = 'http://10.0.2.2:5000/api';
   // For Android emulator use: http://10.0.2.2:5000/api
-  // For Windows desktop use: http://localhost:5000/api
+  // For Windows desktop use: http://188.166.230.230:5000/api
   // For physical device, change localhost to your computer's IP
 
   static Future<String?> getToken() async {
