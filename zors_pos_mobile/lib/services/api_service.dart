@@ -436,4 +436,56 @@ class ApiService {
       return {'success': false, 'message': e.toString()};
     }
   }
+
+  // SUPPLIER ENDPOINTS
+  static Future<Map<String, dynamic>> getSuppliers() async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/suppliers'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['data'] != null) {
+          return {'success': true, 'data': data['data']};
+        }
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'message': 'Failed to fetch suppliers'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createSupplier(
+    Map<String, dynamic> supplierData,
+  ) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/suppliers'),
+        headers: headers,
+        body: jsonEncode(supplierData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message':
+              errorData['error'] ??
+              errorData['message'] ??
+              'Failed to create supplier',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
 }

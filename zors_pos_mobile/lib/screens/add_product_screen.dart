@@ -1,12 +1,18 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../models/product.dart';
 import '../models/category.dart';
 import '../providers/product_provider.dart';
+import '../services/api_service.dart';
 
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({super.key});
@@ -30,12 +36,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
   String? _selectedCategory;
   String? _selectedSupplier;
   bool _dryFood = false;
-  String? _imageBase64;
-  String? _imageFileName;
-  List<int>? _imageBytes;
+  XFile? _pickedImage;
+  Uint8List? _pickedImageBytes; // for web preview/upload
 
   final _picker = ImagePicker();
-  List<String> _suppliers = [];
+  List<Map<String, String>> _suppliers = [];
 
   @override
   void initState() {
@@ -51,9 +56,38 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   void _loadSuppliers() {
-    // TODO: Fetch suppliers from API if available
-    // For now, using hardcoded list or fetch from provider
-    _suppliers = ['Supplier A', 'Supplier B', 'Supplier C'];
+    ApiService.getSuppliers()
+        .then((result) {
+          if (result['success'] == true) {
+            final data = result['data'];
+            if (data is List) {
+              setState(() {
+                _suppliers = data
+                    .map<Map<String, String>>((s) {
+                      final map = s as Map<String, dynamic>;
+                      final id = (map['_id'] ?? '').toString();
+                      final name = (map['name'] ?? '').toString();
+                      if (id.isEmpty || name.isEmpty)
+                        return {'id': '', 'name': ''};
+                      return {'id': id, 'name': name};
+                    })
+                    .where((s) => s['id']!.isNotEmpty && s['name']!.isNotEmpty)
+                    .toList();
+              });
+            }
+          } else {
+            final msg = (result['message'] ?? 'Failed to load suppliers')
+                .toString();
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(msg)));
+          }
+        })
+        .catchError((e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to load suppliers: $e')),
+          );
+        });
   }
 
   @override
@@ -73,21 +107,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _pickImage() async {
     final res = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 5, // Extremely aggressive compression
-      maxWidth: 300, // Very small dimensions
-      maxHeight: 300,
+      maxWidth: 1200,
+      imageQuality: 85,
     );
     if (res != null) {
-      final bytes = await res.readAsBytes();
-      setState(() {
-        _imageBytes = bytes;
-        _imageBase64 = base64Encode(bytes);
-        _imageFileName = res.name;
-      });
-      print(
-        'Image selected: ${bytes.length} bytes (base64: ${_imageBase64!.length} chars)',
-      );
+      if (kIsWeb) {
+        final bytes = await res.readAsBytes();
+        setState(() {
+          _pickedImage = res;
+          _pickedImageBytes = bytes;
+        });
+      } else {
+        setState(() {
+          _pickedImage = res;
+        });
+      }
     }
+  }
+
+  MediaType _detectMediaType(String path) {
+    final ext = path.toLowerCase();
+    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg'))
+      return MediaType('image', 'jpeg');
+    if (ext.endsWith('.png')) return MediaType('image', 'png');
+    if (ext.endsWith('.webp')) return MediaType('image', 'webp');
+    return MediaType('image', 'jpeg');
   }
 
   Future<void> _submit() async {
@@ -98,61 +142,114 @@ class _AddProductScreenState extends State<AddProductScreen> {
       ).showSnackBar(const SnackBar(content: Text('Please select a category')));
       return;
     }
+    // Use multipart/form-data to include image file
+    try {
+      final uri = Uri.parse('${ApiService.baseUrl}/products');
+      final req = http.MultipartRequest('POST', uri);
 
-    final provider = Provider.of<ProductProvider>(context, listen: false);
-
-    // Store image locally (in-app) if selected
-    String? imageData;
-    if (_imageBase64 != null) {
-      final base64Size = _imageBase64!.length;
-      print('Base64 image size: $base64Size characters');
-
-      // If image is too large (> 500KB base64), skip it to avoid payload errors
-      if (base64Size > 500000) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Image too large. Creating product without image...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        imageData = null; // Skip image
-      } else {
-        imageData = _imageBase64;
-        print('Image stored: $base64Size chars');
+      // Add Authorization header if available
+      final token = await ApiService.getToken();
+      if (token != null) {
+        req.headers['Authorization'] = 'Bearer $token';
       }
-    }
 
-    final product = Product(
-      id: '', // server will assign _id
-      name: _nameCtrl.text.trim(),
-      category: _selectedCategory!,
-      description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-      costPrice: double.tryParse(_costCtrl.text) ?? 0,
-      sellingPrice: double.tryParse(_sellCtrl.text) ?? 0,
-      stock: int.tryParse(_stockCtrl.text) ?? 0,
-      minStock: int.tryParse(_minStockCtrl.text) ?? 5,
-      barcode: _barcodeCtrl.text.trim().isEmpty
-          ? null
-          : _barcodeCtrl.text.trim(),
-      image: imageData, // Store base64 image (or null if too large)
-      supplier: _selectedSupplier,
-      discount: double.tryParse(_discountCtrl.text) ?? 0,
-      size: _sizeCtrl.text.trim().isEmpty ? null : _sizeCtrl.text.trim(),
-      dryfood: _dryFood,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+      // Required fields
+      req.fields['name'] = _nameCtrl.text.trim();
+      req.fields['costPrice'] = (_costCtrl.text.trim().isEmpty)
+          ? '0'
+          : _costCtrl.text.trim();
+      req.fields['sellingPrice'] = (_sellCtrl.text.trim().isEmpty)
+          ? '0'
+          : _sellCtrl.text.trim();
+      req.fields['category'] = _selectedCategory!; // backend expects name
+      req.fields['stock'] = (_stockCtrl.text.trim().isEmpty)
+          ? '0'
+          : _stockCtrl.text.trim();
+      req.fields['dryfood'] = _dryFood ? 'true' : 'false';
 
-    final ok = await provider.createProduct(product);
-    if (ok && mounted) {
+      // Optional fields
+      if (_discountCtrl.text.trim().isNotEmpty) {
+        req.fields['discount'] = _discountCtrl.text.trim();
+      }
+      if (_sizeCtrl.text.trim().isNotEmpty) {
+        req.fields['size'] = _sizeCtrl.text.trim();
+      }
+      if (_descCtrl.text.trim().isNotEmpty) {
+        req.fields['description'] = _descCtrl.text.trim();
+      }
+      if (_selectedSupplier != null && _selectedSupplier!.isNotEmpty) {
+        req.fields['supplier'] =
+            _selectedSupplier!; // backend expects supplier id
+      }
+      if (_barcodeCtrl.text.trim().isNotEmpty) {
+        req.fields['barcode'] = _barcodeCtrl.text.trim();
+      }
+      if (_minStockCtrl.text.trim().isNotEmpty) {
+        req.fields['minStock'] = _minStockCtrl.text.trim();
+      }
+
+      // Image file
+      if (_pickedImage != null) {
+        final filename = _pickedImage!.name;
+        final mediaType = _detectMediaType(filename);
+        if (kIsWeb) {
+          final bytes = _pickedImageBytes ?? await _pickedImage!.readAsBytes();
+          req.files.add(
+            http.MultipartFile.fromBytes(
+              'image',
+              bytes,
+              filename: filename,
+              contentType: mediaType,
+            ),
+          );
+        } else {
+          final file = File(_pickedImage!.path);
+          req.files.add(
+            await http.MultipartFile.fromPath(
+              'image',
+              file.path,
+              filename: filename,
+              contentType: mediaType,
+            ),
+          );
+        }
+      }
+
+      final res = await req.send();
+      final body = await res.stream.bytesToString();
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Product created')));
+          // Optionally refresh provider products
+          try {
+            await Provider.of<ProductProvider>(
+              context,
+              listen: false,
+            ).refreshProducts();
+          } catch (_) {}
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        String msg = 'Failed to create product (${res.statusCode})';
+        try {
+          final json = body.isNotEmpty ? jsonDecode(body) : null;
+          if (json is Map && json['error'] is String) {
+            msg = json['error'];
+          } else if (json is Map && json['message'] is String) {
+            msg = json['message'];
+          }
+        } catch (_) {}
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Product created')));
-      Navigator.of(context).pop(true);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(provider.error ?? 'Failed to create product')),
-      );
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -212,13 +309,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         style: BorderStyle.solid,
                       ),
                     ),
-                    child: _imageBase64 != null
+                    child: _pickedImage != null
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(14),
-                            child: Image.memory(
-                              base64Decode(_imageBase64!),
-                              fit: BoxFit.cover,
-                            ),
+                            child: kIsWeb
+                                ? (_pickedImageBytes != null
+                                      ? Image.memory(
+                                          _pickedImageBytes!,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : const Center(
+                                          child: Icon(
+                                            Icons.broken_image,
+                                            color: Colors.black54,
+                                          ),
+                                        ))
+                                : Image.file(
+                                    File(_pickedImage!.path),
+                                    fit: BoxFit.cover,
+                                  ),
                           )
                         : Center(
                             child: Column(
@@ -296,8 +405,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                       items: _suppliers
                           .map(
                             (supplier) => DropdownMenuItem<String>(
-                              value: supplier,
-                              child: Text(supplier),
+                              value: supplier['id'],
+                              child: Text(supplier['name'] ?? ''),
                             ),
                           )
                           .toList(),
