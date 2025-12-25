@@ -255,117 +255,172 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final lowStockCount = products.where((p) => p.stock <= p.minStock).length;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Inventory'),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF324137), Colors.black],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-      ),
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            // Header card with admin + date and quick actions
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: _HeaderCard(
-                title: 'Manage your inventory',
-                subtitle: 'ADMIN',
-                dateText: DateFormat('EEEE, MMM d').format(DateTime.now()),
-                onSettings: () => _showSettings(context),
-                onMore: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('More options coming soon')),
-                  );
-                },
-              ),
-            ),
-            // Stat boxes row
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  _StatBox(
-                    icon: Icons.inventory_2_outlined,
-                    label: 'Products',
-                    value: products.length.toString(),
-                  ),
-                  const SizedBox(width: 8),
-                  _StatBox(
-                    icon: Icons.payments_outlined,
-                    label: 'Value',
-                    value: currency.format(totalValue),
-                  ),
-                  const SizedBox(width: 8),
-                  _StatBox(
-                    icon: Icons.warning_amber_rounded,
-                    label: 'Low Stock',
-                    value: lowStockCount.toString(),
-                    accent: Colors.orange,
+            // Custom Header matching POS screen
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF324137), Colors.black],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
                   ),
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (v) => setState(() => _query = v.trim()),
-                      decoration: InputDecoration(
-                        hintText: 'Search products…',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'Inventory',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
-                        isDense: true,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withOpacity(0.15),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: 'Filter',
-                      icon: Icon(
-                        Icons.tune,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      onPressed: () => _showFilterDialog(context),
-                    ),
-                  ),
+                  SizedBox(width: 40),
                 ],
               ),
             ),
-            const Divider(height: 1),
             Expanded(
-              child: provider.isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : products.isEmpty
-                  ? const Center(child: Text('No products found'))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemBuilder: (context, i) {
-                        final p = products[i];
-                        return _ProductCard(
-                          product: p,
-                          onEdit: () => _editProduct(context, p),
-                          onDelete: () => _deleteProduct(context, p),
+              child: Column(
+                children: [
+                  // Header card with admin + date and quick actions
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: _HeaderCard(
+                      title: 'Manage your inventory',
+                      subtitle: 'ADMIN',
+                      dateText: DateFormat(
+                        'EEEE, MMM d',
+                      ).format(DateTime.now()),
+                      onSettings: () => _showSettings(context),
+                      onMore: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('More options coming soon'),
+                          ),
                         );
                       },
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemCount: products.length,
                     ),
+                  ),
+                  // Stat boxes row
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        _StatBox(
+                          icon: Icons.inventory_2_outlined,
+                          label: 'Products',
+                          value: products.length.toString(),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatBox(
+                          icon: Icons.payments_outlined,
+                          label: 'Value',
+                          value: currency.format(totalValue),
+                        ),
+                        const SizedBox(width: 8),
+                        _StatBox(
+                          icon: Icons.warning_amber_rounded,
+                          label: 'Low Stock',
+                          value: lowStockCount.toString(),
+                          accent: Colors.orange,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _searchCtrl,
+                            onChanged: (v) => setState(() => _query = v.trim()),
+                            decoration: InputDecoration(
+                              hintText: 'Search products…',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Material(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withOpacity(0.15),
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            tooltip: 'Filter',
+                            icon: Icon(
+                              Icons.tune,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            onPressed: () => _showFilterDialog(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: provider.isLoading
+                        ? const Center(child: CircularProgressIndicator())
+                        : products.isEmpty
+                        ? const Center(child: Text('No products found'))
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemBuilder: (context, i) {
+                              final p = products[i];
+                              return _ProductCard(
+                                product: p,
+                                onEdit: () => _editProduct(context, p),
+                                onDelete: () => _deleteProduct(context, p),
+                              );
+                            },
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemCount: products.length,
+                          ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
