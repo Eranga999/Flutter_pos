@@ -52,11 +52,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _editProduct(BuildContext context, Product product) async {
+    final provider = Provider.of<ProductProvider>(context, listen: false);
     final updated = await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => AddProductScreen(product: product)),
     );
     if (updated == true && mounted) {
-      Provider.of<ProductProvider>(context, listen: false).refreshProducts();
+      provider.refreshProducts();
     }
   }
 
@@ -185,6 +186,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _showSettings(BuildContext context) {
+    final provider = Provider.of<ProductProvider>(context, listen: false);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -197,10 +199,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               title: const Text('Refresh Products'),
               onTap: () {
                 Navigator.pop(ctx);
-                Provider.of<ProductProvider>(
-                  context,
-                  listen: false,
-                ).refreshProducts();
+                provider.refreshProducts();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Products refreshed')),
                 );
@@ -375,14 +374,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
         backgroundColor: const Color(0xFF2E7D32),
         foregroundColor: Colors.white,
         onPressed: () async {
+          final provider = Provider.of<ProductProvider>(context, listen: false);
           final created = await Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const AddProductScreen()));
           if (created == true && mounted) {
-            Provider.of<ProductProvider>(
-              context,
-              listen: false,
-            ).refreshProducts();
+            provider.refreshProducts();
           }
         },
         icon: const Icon(Icons.add),
