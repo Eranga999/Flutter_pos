@@ -13,6 +13,7 @@ import '../models/product.dart';
 import '../models/category.dart';
 import '../providers/product_provider.dart';
 import '../services/api_service.dart';
+import '../utils/local_image_store.dart';
 
 class AddProductScreen extends StatefulWidget {
   final Product? product; // null for add, non-null for edit
@@ -232,38 +233,99 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       // Image file
-      if (_pickedImage != null) {
-        final filename = _pickedImage!.name;
-        // Clean filename to remove invalid characters
-        final cleanFilename = filename.replaceAll(RegExp(r'[^\w\s.-]'), '_');
-        final mediaType = _detectMediaType(filename);
-        if (kIsWeb) {
-          final bytes = _pickedImageBytes ?? await _pickedImage!.readAsBytes();
-          req.files.add(
-            http.MultipartFile.fromBytes(
-              'image',
-              bytes,
-              filename: cleanFilename,
-              contentType: mediaType,
-            ),
-          );
-        } else {
-          final file = File(_pickedImage!.path);
-          req.files.add(
-            await http.MultipartFile.fromPath(
-              'image',
-              file.path,
-              filename: cleanFilename,
-              contentType: mediaType,
-            ),
-          );
-        }
-      }
+      // Skipped backend upload per requirement: store locally after success.
+      // No files are attached to the request; image will be saved on-device.
 
       final res = await req.send();
       final body = await res.stream.bytesToString();
 
+      print('✅ Response status: ${res.statusCode}');
+      print('✅ Response body: $body');
+
       if (res.statusCode == 201 || res.statusCode == 200) {
+        // Parse response to check if image was saved
+        try {
+          final responseData = jsonDecode(body);
+          if (responseData is Map) {
+            final savedImage = responseData['image'];
+            if (_pickedImage != null) {
+              if (savedImage == null || savedImage.toString().isEmpty) {
+                print(
+                  '⚠️ WARNING: Image was uploaded but not saved in database!',
+                );
+                print('⚠️ Backend may not be processing the image correctly');
+              } else {
+                print('✅ Image saved successfully: $savedImage');
+              }
+            }
+          }
+        } catch (e) {
+          print('Could not parse response: $e');
+        }
+
+        // Always save image locally (not backend)
+        try {
+          if (_pickedImage != null) {
+            final parsed = jsonDecode(body);
+            String productId = '';
+            if (parsed is Map) {
+              final data = parsed['data'];
+              if (parsed['_id'] is String) {
+                productId = parsed['_id'] as String;
+              } else if (data is Map && data['_id'] is String) {
+                productId = data['_id'] as String;
+              } else if (parsed['product'] is Map &&
+                  (parsed['product'] as Map)['_id'] is String) {
+                productId = (parsed['product'] as Map)['_id'] as String;
+              }
+            }
+
+            // Fallback to edit mode product id when not present in response
+            if (productId.isEmpty && isEditMode) {
+              productId = widget.product!.id;
+            }
+
+            if (productId.isNotEmpty) {
+              final bytes = kIsWeb
+                  ? (_pickedImageBytes ?? await _pickedImage!.readAsBytes())
+                  : await File(_pickedImage!.path).readAsBytes();
+              var ext = 'png';
+              final lower = _pickedImage!.name.toLowerCase();
+              if (lower.endsWith('.jpg') || lower.endsWith('.jpeg'))
+                ext = 'jpg';
+              else if (lower.endsWith('.png'))
+                ext = 'png';
+              else if (lower.endsWith('.webp'))
+                ext = 'webp';
+
+              print(
+                '💾 Saving image for product: $productId (ext: $ext, size: ${bytes.length} bytes)',
+              );
+              await LocalImageStore.saveProductImage(
+                productId,
+                bytes,
+                extension: ext,
+              );
+              print('✅ Saved product image locally for productId=$productId');
+
+              // Verify it was saved
+              final verify = await LocalImageStore.getProductImage(productId);
+              if (verify != null) {
+                print(
+                  '✅ Verified: Image retrieved from cache (${verify.length} bytes)',
+                );
+              } else {
+                print('⚠️ WARNING: Could not retrieve saved image!');
+              }
+            } else {
+              print('⚠️ Could not determine productId to cache image');
+            }
+          }
+        } catch (e) {
+          print('⚠️ Failed to save image locally: $e');
+        }
+
+        print('✅ Product ${isEditMode ? 'updated' : 'created'} successfully');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -398,7 +460,28 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 ? Image.network(
                                     '${ApiService.baseUrl}/products/images/${_existingImageBase64!}',
                                     fit: BoxFit.cover,
+                                    loadingBuilder:
+                                        (context, child, loadingProgress) {
+                                          if (loadingProgress == null)
+                                            return child;
+                                          return Center(
+                                            child: CircularProgressIndicator(
+                                              value:
+                                                  loadingProgress
+                                                          .expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                            .cumulativeBytesLoaded /
+                                                        loadingProgress
+                                                            .expectedTotalBytes!
+                                                  : null,
+                                            ),
+                                          );
+                                        },
                                     errorBuilder: (context, error, stackTrace) {
+                                      print(
+                                        'Error loading product image: $error',
+                                      );
                                       return const Center(
                                         child: Icon(
                                           Icons.broken_image,

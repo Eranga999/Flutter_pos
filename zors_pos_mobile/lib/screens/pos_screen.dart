@@ -4,6 +4,7 @@ import '../providers/product_provider.dart';
 import '../providers/order_provider.dart';
 import '../widgets/loading_widget.dart';
 import '../widgets/error_widget.dart';
+import '../services/api_service.dart';
 import 'cart_screen.dart';
 
 class PosScreen extends StatefulWidget {
@@ -282,54 +283,109 @@ class _PosScreenState extends State<PosScreen> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: product.image != null && product.image!.isNotEmpty
-                      ? Image.network(
-                          product.image!,
-                          fit: BoxFit.cover,
-                          cacheHeight: 250,
-                          cacheWidth: 250,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              color: Colors.grey.shade50,
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 30,
-                                      height: 30,
-                                      child: CircularProgressIndicator(
-                                        value:
-                                            loadingProgress
-                                                    .expectedTotalBytes !=
-                                                null
-                                            ? loadingProgress
-                                                      .cumulativeBytesLoaded /
+                      ? product.image!.contains('/')
+                            // Local file path - use API endpoint
+                            ? Image.network(
+                                '${ApiService.baseUrl}/products/images/${product.image!}',
+                                fit: BoxFit.cover,
+                                cacheHeight: 250,
+                                cacheWidth: 250,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey.shade50,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          SizedBox(
+                                            width: 30,
+                                            height: 30,
+                                            child: CircularProgressIndicator(
+                                              value:
                                                   loadingProgress
-                                                      .expectedTotalBytes!
-                                            : null,
-                                        strokeWidth: 2.5,
-                                        color: const Color(0xFF324137),
+                                                          .expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                            .cumulativeBytesLoaded /
+                                                        loadingProgress
+                                                            .expectedTotalBytes!
+                                                  : null,
+                                              strokeWidth: 2.5,
+                                              color: const Color(0xFF324137),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Loading',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey.shade600,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Loading',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey.shade600,
-                                        fontWeight: FontWeight.w500,
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('Error loading product image: $error');
+                                  return _buildDefaultImagePlaceholder();
+                                },
+                              )
+                            // Direct URL or base64
+                            : Image.network(
+                                product.image!,
+                                fit: BoxFit.cover,
+                                cacheHeight: 250,
+                                cacheWidth: 250,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey.shade50,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          SizedBox(
+                                            width: 30,
+                                            height: 30,
+                                            child: CircularProgressIndicator(
+                                              value:
+                                                  loadingProgress
+                                                          .expectedTotalBytes !=
+                                                      null
+                                                  ? loadingProgress
+                                                            .cumulativeBytesLoaded /
+                                                        loadingProgress
+                                                            .expectedTotalBytes!
+                                                  : null,
+                                              strokeWidth: 2.5,
+                                              color: const Color(0xFF324137),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Loading',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey.shade600,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return _buildDefaultImagePlaceholder();
-                          },
-                        )
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('Error loading product image: $error');
+                                  return _buildDefaultImagePlaceholder();
+                                },
+                              )
                       : _buildDefaultImagePlaceholder(),
                 ),
               ),
