@@ -39,7 +39,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _dryFood = false;
   XFile? _pickedImage;
   Uint8List? _pickedImageBytes; // for web preview/upload
-  String? _existingImageBase64; // for edit mode
+  String? _existingImageBase64; // for edit mode (may be path)
   String? _originalBarcode; // Store original barcode for edit mode
 
   final _picker = ImagePicker();
@@ -62,8 +62,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _sizeCtrl.text = p.size ?? '';
       _barcodeCtrl.text = p.barcode ?? '';
       _descCtrl.text = p.description ?? '';
-      _selectedCategory = p.category;
-      _selectedSupplier = p.supplier;
+      _selectedCategory = (p.category.isNotEmpty) ? p.category : null;
+      _selectedSupplier = (p.supplier != null && p.supplier!.isNotEmpty)
+          ? p.supplier
+          : null;
       _dryFood = p.dryfood ?? false;
       _existingImageBase64 = p.image;
       _originalBarcode = p.barcode; // Store original barcode
@@ -211,11 +213,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
         req.fields['supplier'] = _selectedSupplier!;
       }
 
-      // Handle barcode - always send it in edit mode (even if unchanged)
-      // The backend should handle duplicate check properly
+      // Handle barcode: only send on update if changed
       final currentBarcode = _barcodeCtrl.text.trim();
-      if (currentBarcode.isNotEmpty) {
-        req.fields['barcode'] = currentBarcode;
+      if (isEditMode) {
+        final original = (_originalBarcode ?? '').trim();
+        if (currentBarcode.isNotEmpty && currentBarcode != original) {
+          req.fields['barcode'] = currentBarcode;
+        }
+        // If unchanged or empty, omit to prevent duplicate check firing
+      } else {
+        if (currentBarcode.isNotEmpty) {
+          req.fields['barcode'] = currentBarcode;
+        }
       }
 
       if (_minStockCtrl.text.trim().isNotEmpty) {
@@ -385,22 +394,37 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               _existingImageBase64!.isNotEmpty)
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(14),
-                            child: Image.memory(
-                              base64Decode(
-                                _existingImageBase64!.contains(',')
-                                    ? _existingImageBase64!.split(',').last
-                                    : _existingImageBase64!,
-                              ),
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Center(
-                                  child: Icon(
-                                    Icons.broken_image,
-                                    color: Colors.black54,
+                            child: _existingImageBase64!.contains('/')
+                                ? Image.network(
+                                    '${ApiService.baseUrl}/products/images/${_existingImageBase64!}',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          color: Colors.black54,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Image.memory(
+                                    base64Decode(
+                                      _existingImageBase64!.contains(',')
+                                          ? _existingImageBase64!
+                                                .split(',')
+                                                .last
+                                          : _existingImageBase64!,
+                                    ),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          color: Colors.black54,
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                            ),
                           )
                         : Center(
                             child: Column(
@@ -439,14 +463,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     children: [
                       const Text('Category *'),
                       const SizedBox(height: 6),
+                      // Build unique category list and guard value
                       DropdownButtonFormField<String>(
-                        value: _selectedCategory,
+                        value: () {
+                          final names = provider.categories
+                              .map((c) => c.name)
+                              .where((n) => n.isNotEmpty)
+                              .toSet();
+                          return (_selectedCategory != null &&
+                                  names.contains(_selectedCategory))
+                              ? _selectedCategory
+                              : null;
+                        }(),
                         hint: const Text('Select a category'),
                         items: provider.categories
+                            .map((cat) => cat.name)
+                            .where((n) => n.isNotEmpty)
+                            .toSet()
                             .map(
-                              (cat) => DropdownMenuItem<String>(
-                                value: cat.name,
-                                child: Text(cat.name),
+                              (name) => DropdownMenuItem<String>(
+                                value: name,
+                                child: Text(name),
                               ),
                             )
                             .toList(),
@@ -472,8 +509,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   children: [
                     const Text('Supplier'),
                     const SizedBox(height: 6),
+                    // Build unique supplier IDs and guard value
                     DropdownButtonFormField<String>(
-                      value: _selectedSupplier,
+                      value: () {
+                        final ids = _suppliers
+                            .map((s) => (s['id'] ?? ''))
+                            .where((id) => id.isNotEmpty)
+                            .toSet();
+                        return (_selectedSupplier != null &&
+                                ids.contains(_selectedSupplier))
+                            ? _selectedSupplier
+                            : null;
+                      }(),
                       hint: const Text('Select supplier (optional)'),
                       items: _suppliers
                           .map(

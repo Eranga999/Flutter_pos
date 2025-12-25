@@ -74,9 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             controller: _usernameController,
                             decoration: InputDecoration(
                               hintText: 'Enter your username',
-                              hintStyle: TextStyle(
-                                color: Colors.grey.shade400,
-                              ),
+                              hintStyle: TextStyle(color: Colors.grey.shade400),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 14,
@@ -139,9 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             obscureText: _obscurePassword,
                             decoration: InputDecoration(
                               hintText: 'Enter your password',
-                              hintStyle: TextStyle(
-                                color: Colors.grey.shade400,
-                              ),
+                              hintStyle: TextStyle(color: Colors.grey.shade400),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 14,
@@ -234,7 +230,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                       _passwordController.text,
                                     );
                                     if (success && mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Login successful'),
                                           backgroundColor: Colors.green,
@@ -278,15 +276,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 20),
 
                       // Sign Up Link
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 4,
+                        runSpacing: 4,
                         children: [
                           const Text(
                             "Don't have an account? ",
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.black,
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.black),
+                            softWrap: true,
                           ),
                           GestureDetector(
                             onTap: widget.onSwitchToRegister,
@@ -320,9 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Container(
           width: 70,
           height: 70,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
           child: Image.asset(
             'assets/logo.png',
             fit: BoxFit.contain,

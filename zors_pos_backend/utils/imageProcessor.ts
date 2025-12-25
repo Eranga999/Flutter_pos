@@ -1,11 +1,15 @@
-import { app, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 
 export class ElectronImageHandler {
   private static getAppDataPath(): string {
-    // Use proper Electron user data directory
-    return path.join(app.getPath('userData'), 'products');
+    // Server-side path for storing product images
+    // Use env var PRODUCT_IMAGES_DIR if provided, else default to ./uploads/products
+    const base = process.env.PRODUCT_IMAGES_DIR || path.join(process.cwd(), 'uploads', 'products');
+    if (!fs.existsSync(base)) {
+      fs.mkdirSync(base, { recursive: true });
+    }
+    return base;
   }
 
   static async processAndSaveImage(
@@ -26,27 +30,14 @@ export class ElectronImageHandler {
     const thumbnailPath = path.join(productDir, thumbnailFilename);
     
     try {
-      // Create native image from buffer
-      const image = nativeImage.createFromBuffer(imageBuffer);
-      
-      // Resize to 300x300
-      const resized = image.resize({ width: 300, height: 300 });
-      
-      // Save based on original format
-      let imageData: Buffer;
-      if (ext === '.jpg' || ext === '.jpeg') {
-        imageData = resized.toJPEG(80);
-      } else {
-        imageData = resized.toPNG();
-      }
-      
-      // Write to file
-      fs.writeFileSync(thumbnailPath, imageData);
+      // Save image buffer directly; avoid Electron/nativeImage dependency
+      // Optionally, integrate a resizer (e.g., sharp) in future.
+      fs.writeFileSync(thumbnailPath, imageBuffer);
       
       // Return RELATIVE path instead of absolute
       return `${productId}/${thumbnailFilename}`;
     } catch (error) {
-      console.error('Error processing image with nativeImage:', error);
+      console.error('Error processing image:', error);
       throw error;
     }
   }
