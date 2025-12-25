@@ -27,11 +27,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Business Reports'),
+        title: const Text(
+          'Business Reports',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: const Color(0xFF324137),
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.download, color: Colors.white),
             onPressed: () => _exportCsv(provider),
           ),
         ],
@@ -230,14 +236,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
 
     final spots = <FlSpot>[];
-    final maxRevenue = provider.dailyRevenue
-        .map((d) => (d['revenue'] as num).toDouble())
-        .reduce((a, b) => a > b ? a : b);
+    double maxRevenue = 0;
 
     for (var i = 0; i < provider.dailyRevenue.length; i++) {
       final revenue = (provider.dailyRevenue[i]['revenue'] as num).toDouble();
       spots.add(FlSpot(i.toDouble(), revenue));
+      if (revenue > maxRevenue) maxRevenue = revenue;
     }
+
+    // Ensure maxRevenue is not zero to avoid division by zero
+    if (maxRevenue == 0) maxRevenue = 100;
+
+    // Calculate proper interval for Y axis
+    final yInterval = maxRevenue / 4;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -271,7 +282,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: maxRevenue / 4,
+                  horizontalInterval: yInterval,
                   getDrawingHorizontalLine: (value) {
                     return FlLine(color: Colors.grey.shade200, strokeWidth: 1);
                   },
@@ -287,42 +298,52 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 30,
-                      interval: spots.length > 7
-                          ? (spots.length / 7).ceil().toDouble()
-                          : 1,
+                      reservedSize: 32,
+                      interval: 1,
                       getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= provider.dailyRevenue.length) {
+                        final index = value.toInt();
+                        if (index < 0 ||
+                            index >= provider.dailyRevenue.length) {
                           return const SizedBox();
                         }
-                        final date =
-                            provider.dailyRevenue[value.toInt()]['date']
-                                as String;
-                        final day = date.split('-').last;
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            day,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 10,
+                        final dateStr =
+                            provider.dailyRevenue[index]['date'] as String;
+                        // Parse date (format: YYYY-MM-DD) and display as DD/MM
+                        final parts = dateStr.split('-');
+                        if (parts.length == 3) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              '${parts[2]}/${parts[1]}',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                        );
+                          );
+                        }
+                        return const SizedBox();
                       },
                     ),
                   ),
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 45,
-                      interval: maxRevenue / 4,
+                      reservedSize: 50,
+                      interval: yInterval,
                       getTitlesWidget: (value, meta) {
-                        return Text(
-                          'Rs.${value.toInt()}',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 10,
+                        if (value < 0) return const SizedBox();
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Text(
+                            value >= 1000
+                                ? '${(value / 1000).toStringAsFixed(1)}k'
+                                : value.toInt().toString(),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 10,
+                            ),
                           ),
                         );
                       },
@@ -431,6 +452,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildTopProductsSection(ReportsProvider provider) {
+    // Limit to top 5 products
+    final topFive = provider.topProducts.take(5).toList();
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -447,16 +471,40 @@ class _ReportsScreenState extends State<ReportsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Top Selling Products',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF324137),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Top Selling Products',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF324137),
+                ),
+              ),
+              if (topFive.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC8E260),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Top ${topFive.length}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF324137),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
-          if (provider.topProducts.isEmpty)
+          if (topFive.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(20),
@@ -467,8 +515,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ),
             )
           else
-            ...provider.topProducts.map(
-              (product) => Padding(
+            ...topFive.asMap().entries.map((entry) {
+              final index = entry.key;
+              final product = entry.value;
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Row(
                   children: [
@@ -479,9 +529,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         color: const Color(0xFFC8E260),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
-                        Icons.shopping_bag,
-                        color: Color(0xFF324137),
+                      child: Center(
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF324137),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -495,6 +551,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           Text(
                             '${product['quantity']} units sold',
@@ -527,8 +585,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
         ],
       ),
     );

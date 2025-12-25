@@ -76,7 +76,7 @@ class ReportsProvider extends ChangeNotifier {
         final createdAt = order['createdAt'];
         if (createdAt == null) return false;
         try {
-          final orderDate = DateTime.parse(createdAt.toString());
+          final orderDate = DateTime.parse(createdAt.toString()).toLocal();
           return orderDate.isAfter(cutoffDate);
         } catch (_) {
           return false;
@@ -96,7 +96,9 @@ class ReportsProvider extends ChangeNotifier {
 
         // Today revenue
         try {
-          final orderDate = DateTime.parse(order['createdAt'].toString());
+          final orderDate = DateTime.parse(
+            order['createdAt'].toString(),
+          ).toLocal();
           final now = DateTime.now();
           final isToday =
               orderDate.year == now.year &&
@@ -198,7 +200,7 @@ class ReportsProvider extends ChangeNotifier {
       if (createdAt == null) continue;
 
       try {
-        final date = DateTime.parse(createdAt.toString());
+        final date = DateTime.parse(createdAt.toString()).toLocal();
         final dateKey =
             '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
         final amount = (order['totalAmount'] ?? 0) as num;

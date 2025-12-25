@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data' show Uint8List;
+import 'dart:convert' show base64Decode;
 import 'package:provider/provider.dart';
 import '../providers/product_provider.dart';
 import '../providers/order_provider.dart';
 import '../widgets/loading_widget.dart';
 import '../widgets/error_widget.dart';
 import '../services/api_service.dart';
+import '../utils/local_image_store.dart';
 import 'cart_screen.dart';
 
 class PosScreen extends StatefulWidget {
@@ -282,111 +285,10 @@ class _PosScreenState extends State<PosScreen> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: product.image != null && product.image!.isNotEmpty
-                      ? product.image!.contains('/')
-                            // Local file path - use API endpoint
-                            ? Image.network(
-                                '${ApiService.baseUrl}/products/images/${product.image!}',
-                                fit: BoxFit.cover,
-                                cacheHeight: 250,
-                                cacheWidth: 250,
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    color: Colors.grey.shade50,
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          SizedBox(
-                                            width: 30,
-                                            height: 30,
-                                            child: CircularProgressIndicator(
-                                              value:
-                                                  loadingProgress
-                                                          .expectedTotalBytes !=
-                                                      null
-                                                  ? loadingProgress
-                                                            .cumulativeBytesLoaded /
-                                                        loadingProgress
-                                                            .expectedTotalBytes!
-                                                  : null,
-                                              strokeWidth: 2.5,
-                                              color: const Color(0xFF324137),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            'Loading',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey.shade600,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) {
-                                  print('Error loading product image: $error');
-                                  return _buildDefaultImagePlaceholder();
-                                },
-                              )
-                            // Direct URL or base64
-                            : Image.network(
-                                product.image!,
-                                fit: BoxFit.cover,
-                                cacheHeight: 250,
-                                cacheWidth: 250,
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    color: Colors.grey.shade50,
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          SizedBox(
-                                            width: 30,
-                                            height: 30,
-                                            child: CircularProgressIndicator(
-                                              value:
-                                                  loadingProgress
-                                                          .expectedTotalBytes !=
-                                                      null
-                                                  ? loadingProgress
-                                                            .cumulativeBytesLoaded /
-                                                        loadingProgress
-                                                            .expectedTotalBytes!
-                                                  : null,
-                                              strokeWidth: 2.5,
-                                              color: const Color(0xFF324137),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            'Loading',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey.shade600,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) {
-                                  print('Error loading product image: $error');
-                                  return _buildDefaultImagePlaceholder();
-                                },
-                              )
-                      : _buildDefaultImagePlaceholder(),
+                  child: _POSProductImage(
+                    productId: product.id,
+                    imagePath: product.image,
+                  ),
                 ),
               ),
             ),
@@ -631,6 +533,196 @@ class _PosScreenState extends State<PosScreen> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _POSProductImage extends StatefulWidget {
+  final String productId;
+  final String? imagePath;
+  const _POSProductImage({required this.productId, this.imagePath});
+
+  @override
+  State<_POSProductImage> createState() => _POSProductImageState();
+}
+
+class _POSProductImageState extends State<_POSProductImage> {
+  Uint8List? _localBytes;
+  bool _triedLocal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocal();
+  }
+
+  @override
+  void didUpdateWidget(_POSProductImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.productId != widget.productId) {
+      _triedLocal = false;
+      _localBytes = null;
+      _loadLocal();
+    }
+  }
+
+  void _loadLocal() async {
+    if (_triedLocal) return;
+    _triedLocal = true;
+    final bytes = await LocalImageStore.getProductImage(widget.productId);
+    if (!mounted) return;
+    setState(() {
+      _localBytes = bytes;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget child;
+    final path = widget.imagePath;
+
+    if (_localBytes != null) {
+      child = Image.memory(
+        _localBytes!,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
+    } else if (path != null && path.isNotEmpty) {
+      final isHttp = path.startsWith('http://') || path.startsWith('https://');
+      final looksLikeDataUri = path.startsWith('data:');
+      final looksLikeBase64 =
+          !looksLikeDataUri &&
+          RegExp(r'^[A-Za-z0-9+/=]+$').hasMatch(path) &&
+          path.length > 50;
+
+      if (isHttp) {
+        child = Image.network(
+          path,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: Colors.grey.shade50,
+              child: Center(
+                child: SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                        : null,
+                    strokeWidth: 2.5,
+                    color: const Color(0xFF324137),
+                  ),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            _loadLocal();
+            return _buildPlaceholder();
+          },
+        );
+      } else if (looksLikeDataUri || looksLikeBase64) {
+        try {
+          String cleanBase64 = path.trim();
+          if (cleanBase64.startsWith('data:')) {
+            final parts = cleanBase64.split(',');
+            if (parts.length > 1) cleanBase64 = parts[1];
+          }
+          cleanBase64 = cleanBase64.replaceAll(RegExp(r'\s+'), '');
+          final decoded = base64Decode(cleanBase64);
+          child = Image.memory(
+            decoded,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+          );
+        } catch (_) {
+          _loadLocal();
+          child = _buildPlaceholder();
+        }
+      } else {
+        final url = '${ApiService.baseUrl}/products/images/$path';
+        child = Image.network(
+          url,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: Colors.grey.shade50,
+              child: Center(
+                child: SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                              loadingProgress.expectedTotalBytes!
+                        : null,
+                    strokeWidth: 2.5,
+                    color: const Color(0xFF324137),
+                  ),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            _loadLocal();
+            return _buildPlaceholder();
+          },
+        );
+      }
+    } else {
+      child = _buildPlaceholder();
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: double.infinity,
+      child: child,
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.grey.shade50,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.image_outlined,
+                size: 28,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No Image',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
