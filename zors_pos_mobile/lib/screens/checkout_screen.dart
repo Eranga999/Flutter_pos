@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
 import '../services/api_service.dart';
+import '../models/discount.dart';
 import 'receipt_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -21,7 +22,74 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _cashGivenController = TextEditingController();
   final TextEditingController _cardReferenceController =
       TextEditingController();
-  final TextEditingController _customerNameController = TextEditingController(text: "CUSTOMER");
+  final TextEditingController _customerNameController = TextEditingController(
+    text: "CUSTOMER",
+  );
+
+  List<Discount> _availableDiscounts = [];
+  Discount? _selectedDiscount;
+  Discount? _globalDiscount;
+  bool _isLoadingDiscounts = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDiscounts();
+  }
+
+  Future<void> _loadDiscounts() async {
+    try {
+      final result = await ApiService.getDiscounts();
+      if (result['success'] == true && result['data'] != null) {
+        final discounts = (result['data'] as List)
+            .map((json) => Discount.fromJson(json))
+            .toList();
+
+        setState(() {
+          _availableDiscounts = discounts;
+          // Find global discount
+          try {
+            _globalDiscount = discounts.firstWhere((d) => d.isGlobal);
+          } catch (e) {
+            _globalDiscount = null;
+          }
+          // Auto-apply global discount if it exists
+          if (_globalDiscount != null) {
+            _selectedDiscount = _globalDiscount;
+            _applyDiscount();
+          }
+          _isLoadingDiscounts = false;
+        });
+      } else {
+        setState(() => _isLoadingDiscounts = false);
+      }
+    } catch (e) {
+      print('Error loading discounts: $e');
+      setState(() => _isLoadingDiscounts = false);
+    }
+  }
+
+  void _applyDiscount() {
+    if (_selectedDiscount == null) {
+      context.read<OrderProvider>().setDiscount(0.0);
+      return;
+    }
+
+    final orderProvider = context.read<OrderProvider>();
+    final subtotal = orderProvider.cartItems.fold<double>(
+      0.0,
+      (sum, item) => sum + (item.unitPrice * item.quantity),
+    );
+
+    double discountAmount = 0.0;
+    if (_selectedDiscount!.discountType == 'percentage') {
+      discountAmount = subtotal * (_selectedDiscount!.discountValue / 100);
+    } else {
+      discountAmount = _selectedDiscount!.discountValue;
+    }
+
+    orderProvider.setDiscount(discountAmount);
+  }
 
   @override
   void dispose() {
@@ -314,6 +382,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'deliveryCharge': 0,
         'discountPercentage': discountPercentage,
         'totalAmount': total,
+        // Add appliedCoupon if a discount is selected (matching backend Coupon interface)
+        if (_selectedDiscount != null)
+          'appliedCoupon': {
+            'code': _selectedDiscount!.codeOrName,
+            'discount': _selectedDiscount!.discountValue,
+            'type': _selectedDiscount!.discountType,
+            'description':
+                '${_selectedDiscount!.codeOrName} - ${_selectedDiscount!.discountValue}${_selectedDiscount!.discountType == 'percentage' ? '%' : ' Rs.'} off',
+          },
       };
 
       // Call backend API to create order
@@ -526,6 +603,80 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             contentPadding: const EdgeInsets.all(12),
                           ),
                         ),
+                        const SizedBox(height: 20),
+
+                        // Discount Section
+                        const Text(
+                          'Apply Discount',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF324137),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (_isLoadingDiscounts)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (_availableDiscounts.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey[300]!,
+                                width: 1.6,
+                              ),
+                            ),
+                            child: const Text(
+                              'No discounts available',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          )
+                        else
+                          Column(
+                            children: [
+                              // No discount option
+                              _buildDiscountOption(
+                                null,
+                                'No Discount',
+                                'Proceed without discount',
+                              ),
+                              const SizedBox(height: 10),
+                              // Global discount (if exists)
+                              if (_globalDiscount != null) ...[
+                                _buildDiscountOption(
+                                  _globalDiscount,
+                                  '${_globalDiscount!.codeOrName} (Global)',
+                                  '${_globalDiscount!.discountValue}% off',
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                              // Other discounts
+                              ..._availableDiscounts
+                                  .where((d) => !d.isGlobal)
+                                  .map(
+                                    (discount) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 10,
+                                      ),
+                                      child: _buildDiscountOption(
+                                        discount,
+                                        discount.codeOrName,
+                                        '${discount.discountValue}${discount.discountType == 'percentage' ? '%' : ' Rs.'} off',
+                                      ),
+                                    ),
+                                  ),
+                            ],
+                          ),
                         const SizedBox(height: 20),
 
                         // Order Summary Section
@@ -988,6 +1139,102 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 color: const Color(0xFF324137),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscountOption(
+    Discount? discount,
+    String title,
+    String subtitle,
+  ) {
+    final isSelected = _selectedDiscount?.id == discount?.id;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedDiscount = discount;
+        });
+        _applyDiscount();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(
+            color: isSelected ? const Color(0xFFC8E260) : Colors.grey[300]!,
+            width: isSelected ? 2 : 1.6,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFC8E260).withOpacity(0.2),
+                    blurRadius: 8,
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFFC8E260)
+                      : Colors.grey[400]!,
+                  width: 2,
+                ),
+                color: isSelected
+                    ? const Color(0xFFC8E260)
+                    : Colors.transparent,
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 14, color: Colors.black)
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                      color: const Color(0xFF324137),
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            if (discount?.isGlobal == true)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC8E260).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'AUTO',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF324137),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
