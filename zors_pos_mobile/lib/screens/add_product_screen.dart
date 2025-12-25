@@ -15,7 +15,8 @@ import '../providers/product_provider.dart';
 import '../services/api_service.dart';
 
 class AddProductScreen extends StatefulWidget {
-  const AddProductScreen({super.key});
+  final Product? product; // null for add, non-null for edit
+  const AddProductScreen({super.key, this.product});
 
   @override
   State<AddProductScreen> createState() => _AddProductScreenState();
@@ -38,13 +39,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _dryFood = false;
   XFile? _pickedImage;
   Uint8List? _pickedImageBytes; // for web preview/upload
+  String? _existingImageBase64; // for edit mode
+  String? _originalBarcode; // Store original barcode for edit mode
 
   final _picker = ImagePicker();
   List<Map<String, String>> _suppliers = [];
 
+  bool get isEditMode => widget.product != null;
+
   @override
   void initState() {
     super.initState();
+    // Pre-fill if editing
+    if (isEditMode) {
+      final p = widget.product!;
+      _nameCtrl.text = p.name;
+      _costCtrl.text = p.costPrice.toString();
+      _sellCtrl.text = p.sellingPrice.toString();
+      _discountCtrl.text = (p.discount ?? 0).toString();
+      _stockCtrl.text = p.stock.toString();
+      _minStockCtrl.text = p.minStock.toString();
+      _sizeCtrl.text = p.size ?? '';
+      _barcodeCtrl.text = p.barcode ?? '';
+      _descCtrl.text = p.description ?? '';
+      _selectedCategory = p.category;
+      _selectedSupplier = p.supplier;
+      _dryFood = p.dryfood ?? false;
+      _existingImageBase64 = p.image;
+      _originalBarcode = p.barcode; // Store original barcode
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final provider = Provider.of<ProductProvider>(context, listen: false);
@@ -144,8 +167,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
     // Use multipart/form-data to include image file
     try {
-      final uri = Uri.parse('${ApiService.baseUrl}/products');
-      final req = http.MultipartRequest('POST', uri);
+      final uri = isEditMode
+          ? Uri.parse('${ApiService.baseUrl}/products/${widget.product!.id}')
+          : Uri.parse('${ApiService.baseUrl}/products');
+      final req = http.MultipartRequest(isEditMode ? 'PUT' : 'POST', uri);
 
       // Add Authorization header if available
       final token = await ApiService.getToken();
@@ -165,11 +190,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       req.fields['stock'] = (_stockCtrl.text.trim().isEmpty)
           ? '0'
           : _stockCtrl.text.trim();
+      req.fields['minStock'] = (_minStockCtrl.text.trim().isEmpty)
+          ? '5'
+          : _minStockCtrl.text.trim();
       req.fields['dryfood'] = _dryFood ? 'true' : 'false';
 
       // Optional fields
       if (_discountCtrl.text.trim().isNotEmpty) {
         req.fields['discount'] = _discountCtrl.text.trim();
+      } else {
+        req.fields['discount'] = '0';
       }
       if (_sizeCtrl.text.trim().isNotEmpty) {
         req.fields['size'] = _sizeCtrl.text.trim();
@@ -178,12 +208,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
         req.fields['description'] = _descCtrl.text.trim();
       }
       if (_selectedSupplier != null && _selectedSupplier!.isNotEmpty) {
-        req.fields['supplier'] =
-            _selectedSupplier!; // backend expects supplier id
+        req.fields['supplier'] = _selectedSupplier!;
       }
-      if (_barcodeCtrl.text.trim().isNotEmpty) {
-        req.fields['barcode'] = _barcodeCtrl.text.trim();
+
+      // Handle barcode - always send it in edit mode (even if unchanged)
+      // The backend should handle duplicate check properly
+      final currentBarcode = _barcodeCtrl.text.trim();
+      if (currentBarcode.isNotEmpty) {
+        req.fields['barcode'] = currentBarcode;
       }
+
       if (_minStockCtrl.text.trim().isNotEmpty) {
         req.fields['minStock'] = _minStockCtrl.text.trim();
       }
@@ -191,6 +225,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       // Image file
       if (_pickedImage != null) {
         final filename = _pickedImage!.name;
+        // Clean filename to remove invalid characters
+        final cleanFilename = filename.replaceAll(RegExp(r'[^\w\s.-]'), '_');
         final mediaType = _detectMediaType(filename);
         if (kIsWeb) {
           final bytes = _pickedImageBytes ?? await _pickedImage!.readAsBytes();
@@ -198,7 +234,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             http.MultipartFile.fromBytes(
               'image',
               bytes,
-              filename: filename,
+              filename: cleanFilename,
               contentType: mediaType,
             ),
           );
@@ -208,7 +244,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             await http.MultipartFile.fromPath(
               'image',
               file.path,
-              filename: filename,
+              filename: cleanFilename,
               contentType: mediaType,
             ),
           );
@@ -220,9 +256,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Product created')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(isEditMode ? 'Product updated' : 'Product created'),
+            ),
+          );
           // Optionally refresh provider products
           try {
             await Provider.of<ProductProvider>(
@@ -233,23 +271,37 @@ class _AddProductScreenState extends State<AddProductScreen> {
           Navigator.of(context).pop(true);
         }
       } else {
-        String msg = 'Failed to create product (${res.statusCode})';
+        String msg =
+            'Failed to ${isEditMode ? 'update' : 'create'} product (${res.statusCode})';
         try {
           final json = body.isNotEmpty ? jsonDecode(body) : null;
           if (json is Map && json['error'] is String) {
             msg = json['error'];
           } else if (json is Map && json['message'] is String) {
             msg = json['message'];
+          } else if (json is Map) {
+            // Show the full error response for debugging
+            msg += '\nDetails: ${json.toString()}';
           }
-        } catch (_) {}
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
+        } catch (e) {
+          msg +=
+              '\nResponse: ${body.length > 200 ? body.substring(0, 200) : body}';
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
     }
   }
 
@@ -257,7 +309,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add New Product'),
+        title: Text(isEditMode ? 'Edit Product' : 'Add New Product'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(40),
           child: Container(
@@ -328,6 +380,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                     File(_pickedImage!.path),
                                     fit: BoxFit.cover,
                                   ),
+                          )
+                        : (_existingImageBase64 != null &&
+                              _existingImageBase64!.isNotEmpty)
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.memory(
+                              base64Decode(
+                                _existingImageBase64!.contains(',')
+                                    ? _existingImageBase64!.split(',').last
+                                    : _existingImageBase64!,
+                              ),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Icon(
+                                    Icons.broken_image,
+                                    color: Colors.black54,
+                                  ),
+                                );
+                              },
+                            ),
                           )
                         : Center(
                             child: Column(
@@ -522,7 +595,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: _submit,
-                        child: const Text('Add Product'),
+                        child: Text(
+                          isEditMode ? 'Update Product' : 'Add Product',
+                        ),
                       ),
                     ),
                   ],

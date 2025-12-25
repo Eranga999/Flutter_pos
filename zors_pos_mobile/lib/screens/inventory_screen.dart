@@ -17,6 +17,8 @@ class InventoryScreen extends StatefulWidget {
 class _InventoryScreenState extends State<InventoryScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
+  String? _selectedCategoryFilter;
+  String _stockFilter = 'all'; // 'all', 'low', 'inStock'
 
   @override
   void initState() {
@@ -36,20 +38,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
     super.dispose();
   }
 
-  void _editProduct(BuildContext context, Product product) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Product'),
-        content: const Text('Edit functionality coming soon'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+  void _editProduct(BuildContext context, Product product) async {
+    final updated = await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AddProductScreen(product: product)),
     );
+    if (updated == true && mounted) {
+      Provider.of<ProductProvider>(context, listen: false).refreshProducts();
+    }
   }
 
   void _deleteProduct(BuildContext context, Product product) {
@@ -85,12 +80,182 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  void _showFilterDialog(BuildContext context) {
+    final provider = Provider.of<ProductProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Filter Products'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Stock Status',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                RadioListTile<String>(
+                  title: const Text('All'),
+                  value: 'all',
+                  groupValue: _stockFilter,
+                  onChanged: (val) => setDialogState(() => _stockFilter = val!),
+                ),
+                RadioListTile<String>(
+                  title: const Text('Low Stock'),
+                  value: 'low',
+                  groupValue: _stockFilter,
+                  onChanged: (val) => setDialogState(() => _stockFilter = val!),
+                ),
+                RadioListTile<String>(
+                  title: const Text('In Stock'),
+                  value: 'inStock',
+                  groupValue: _stockFilter,
+                  onChanged: (val) => setDialogState(() => _stockFilter = val!),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Category',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                DropdownButton<String?>(
+                  value: _selectedCategoryFilter,
+                  isExpanded: true,
+                  hint: const Text('All Categories'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All Categories'),
+                    ),
+                    ...provider.categories.map((cat) {
+                      return DropdownMenuItem(
+                        value: cat.name,
+                        child: Text(cat.name),
+                      );
+                    }),
+                  ],
+                  onChanged: (val) =>
+                      setDialogState(() => _selectedCategoryFilter = val),
+                ),
+              ],
+            );
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _stockFilter = 'all';
+                _selectedCategoryFilter = null;
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {}); // Apply filters
+              Navigator.pop(ctx);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: const Text('Refresh Products'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Provider.of<ProductProvider>(
+                  context,
+                  listen: false,
+                ).refreshProducts();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Products refreshed')),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.category),
+              title: const Text('Manage Categories'),
+              onTap: () {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Categories management coming soon'),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.local_shipping),
+              title: const Text('Manage Suppliers'),
+              onTap: () {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Supplier management coming soon'),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Product> _applyFilters(List<Product> products) {
+    var filtered = products;
+
+    // Apply category filter
+    if (_selectedCategoryFilter != null) {
+      filtered = filtered
+          .where((p) => p.category == _selectedCategoryFilter)
+          .toList();
+    }
+
+    // Apply stock filter
+    if (_stockFilter == 'low') {
+      filtered = filtered.where((p) => p.stock <= p.minStock).toList();
+    } else if (_stockFilter == 'inStock') {
+      filtered = filtered.where((p) => p.stock > p.minStock).toList();
+    }
+
+    return filtered;
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<ProductProvider>(context);
-    final products = _query.isEmpty
+    var products = _query.isEmpty
         ? provider.products
         : provider.searchProducts(_query);
+
+    // Apply filters
+    products = _applyFilters(products);
 
     final currency = NumberFormat.currency(symbol: 'Rs ', decimalDigits: 2);
     final totalValue = products.fold<double>(
@@ -111,23 +276,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ),
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Add Product',
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: () async {
-              final created = await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AddProductScreen()),
-              );
-              if (created == true && mounted) {
-                Provider.of<ProductProvider>(
-                  context,
-                  listen: false,
-                ).refreshProducts();
-              }
-            },
-          ),
-        ],
       ),
       body: SafeArea(
         child: Column(
@@ -139,6 +287,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 title: 'Manage your inventory',
                 subtitle: 'ADMIN',
                 dateText: DateFormat('EEEE, MMM d').format(DateTime.now()),
+                onSettings: () => _showSettings(context),
+                onMore: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('More options coming soon')),
+                  );
+                },
               ),
             ),
             // Stat boxes row
@@ -197,12 +351,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         Icons.tune,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                      onPressed: () {
-                        // Placeholder for future filters
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Filters coming soon')),
-                        );
-                      },
+                      onPressed: () => _showFilterDialog(context),
                     ),
                   ),
                 ],
@@ -232,6 +381,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF2E7D32),
+        foregroundColor: Colors.white,
         onPressed: () async {
           final created = await Navigator.of(
             context,
@@ -244,7 +395,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           }
         },
         icon: const Icon(Icons.add),
-        label: const Text('Add Item'),
+        label: const Text('Add Product'),
       ),
     );
   }
@@ -526,17 +677,38 @@ class _ProductImage extends StatelessWidget {
     Widget child;
     if (base64 != null && base64!.isNotEmpty) {
       try {
+        // Remove data URL prefix if present (e.g., "data:image/png;base64,")
+        String cleanBase64 = base64!.trim();
+
+        // Remove common data URL prefixes
+        if (cleanBase64.startsWith('data:')) {
+          final parts = cleanBase64.split(',');
+          if (parts.length > 1) {
+            cleanBase64 = parts[1];
+          }
+        }
+
+        // Remove any whitespace or newlines
+        cleanBase64 = cleanBase64.replaceAll(RegExp(r'\s+'), '');
+
         child = Image.memory(
-          base64Decode(base64!),
+          base64Decode(cleanBase64),
           fit: BoxFit.cover,
           width: 80,
           height: 80,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(Icons.broken_image, color: Colors.grey, size: 40);
+          },
         );
-      } catch (_) {
-        child = const Icon(Icons.image, color: Colors.grey);
+      } catch (e) {
+        child = const Icon(Icons.broken_image, color: Colors.grey, size: 40);
       }
     } else {
-      child = const Icon(Icons.inventory_2_outlined);
+      child = const Icon(
+        Icons.inventory_2_outlined,
+        color: Colors.grey,
+        size: 40,
+      );
     }
 
     return Container(
@@ -576,10 +748,15 @@ class _HeaderCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final String dateText;
+  final VoidCallback? onSettings;
+  final VoidCallback? onMore;
+
   const _HeaderCard({
     required this.title,
     required this.subtitle,
     required this.dateText,
+    this.onSettings,
+    this.onMore,
   });
 
   @override
@@ -639,9 +816,9 @@ class _HeaderCard extends StatelessWidget {
           ),
           Row(
             children: [
-              _HeaderIcon(icon: Icons.settings),
+              _HeaderIcon(icon: Icons.settings, onTap: onSettings),
               const SizedBox(width: 8),
-              _HeaderIcon(icon: Icons.more_horiz),
+              _HeaderIcon(icon: Icons.more_horiz, onTap: onMore),
             ],
           ),
         ],
@@ -652,7 +829,10 @@ class _HeaderCard extends StatelessWidget {
 
 class _HeaderIcon extends StatelessWidget {
   final IconData icon;
-  const _HeaderIcon({required this.icon});
+  final VoidCallback? onTap;
+
+  const _HeaderIcon({required this.icon, this.onTap});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -662,7 +842,7 @@ class _HeaderIcon extends StatelessWidget {
       ),
       child: IconButton(
         icon: Icon(icon, color: Colors.white),
-        onPressed: () {},
+        onPressed: onTap ?? () {},
       ),
     );
   }
