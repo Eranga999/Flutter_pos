@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' show FontFeature;
 import 'dart:convert' show base64Decode;
+import 'dart:typed_data' show Uint8List;
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/product_provider.dart';
 import '../models/product.dart';
 import 'add_product_screen.dart';
 import '../services/api_service.dart';
+import '../utils/local_image_store.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -77,6 +79,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 listen: false,
               );
               await provider.deleteProduct(product.id);
+              // Clean up any locally cached image
+              await LocalImageStore.removeProductImage(product.id);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Product deleted')),
@@ -491,7 +495,7 @@ class _ProductCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                _ProductImage(base64: product.image),
+                _ProductImage(productId: product.id, imagePath: product.image),
                 if (isNew)
                   Positioned(
                     top: 6,
@@ -655,51 +659,145 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
-class _ProductImage extends StatelessWidget {
-  final String? base64;
-  const _ProductImage({this.base64});
+class _ProductImage extends StatefulWidget {
+  final String productId;
+  final String? imagePath;
+  const _ProductImage({required this.productId, this.imagePath});
+
+  @override
+  State<_ProductImage> createState() => _ProductImageState();
+}
+
+class _ProductImageState extends State<_ProductImage> {
+  Uint8List? _localBytes;
+  bool _triedLocal = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Always try to load from local cache first
+    _loadLocal();
+  }
+
+  @override
+  void didUpdateWidget(_ProductImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload if product ID changed
+    if (oldWidget.productId != widget.productId) {
+      _triedLocal = false;
+      _localBytes = null;
+      _loadLocal();
+    }
+  }
+
+  void _loadLocal() async {
+    if (_triedLocal) return;
+    _triedLocal = true;
+    print('🔍 Loading image for productId=${widget.productId}');
+    final bytes = await LocalImageStore.getProductImage(widget.productId);
+    if (bytes != null) {
+      print('✅ Found cached image: ${bytes.length} bytes');
+    } else {
+      print('⚠️ No cached image found for ${widget.productId}');
+    }
+    if (!mounted) return;
+    setState(() {
+      _localBytes = bytes;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     Widget child;
-    if (base64 != null && base64!.isNotEmpty) {
-      // If `image` is a relative path (productId/filename), load via network
-      if (base64!.contains('/')) {
-        final url = '${ApiService.baseUrl}/products/images/${base64!}';
+    final path = widget.imagePath;
+
+    if (_localBytes != null) {
+      child = Image.memory(
+        _localBytes!,
+        fit: BoxFit.cover,
+        width: 80,
+        height: 80,
+      );
+    } else if (path != null && path.isNotEmpty) {
+      // Determine image type: direct URL, base64, or server filename/path
+      final isHttp = path.startsWith('http://') || path.startsWith('https://');
+      final looksLikeDataUri = path.startsWith('data:');
+      final looksLikeBase64 =
+          !looksLikeDataUri &&
+          RegExp(r'^[A-Za-z0-9+/=]+$').hasMatch(path) &&
+          path.length >
+              50; // heuristic to avoid treating short filenames as base64
+
+      if (isHttp) {
         child = Image.network(
-          url,
+          path,
           fit: BoxFit.cover,
           width: 80,
           height: 80,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 80,
+              height: 80,
+              color: Colors.grey[100],
+              child: const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          },
           errorBuilder: (context, error, stackTrace) {
+            _loadLocal();
             return const Icon(Icons.broken_image, color: Colors.grey, size: 40);
           },
         );
-      } else {
-        // Fallback: treat as base64 data URL/content
+      } else if (looksLikeDataUri || looksLikeBase64) {
+        // Base64 string (data URI or raw base64)
         try {
-          String cleanBase64 = base64!.trim();
+          String cleanBase64 = path.trim();
           if (cleanBase64.startsWith('data:')) {
             final parts = cleanBase64.split(',');
             if (parts.length > 1) cleanBase64 = parts[1];
           }
           cleanBase64 = cleanBase64.replaceAll(RegExp(r'\s+'), '');
+          final decoded = base64Decode(cleanBase64);
           child = Image.memory(
-            base64Decode(cleanBase64),
+            decoded,
             fit: BoxFit.cover,
             width: 80,
             height: 80,
-            errorBuilder: (context, error, stackTrace) {
-              return const Icon(
-                Icons.broken_image,
-                color: Colors.grey,
-                size: 40,
-              );
-            },
           );
-        } catch (e) {
-          child = const Icon(Icons.broken_image, color: Colors.grey, size: 40);
+        } catch (_) {
+          _loadLocal();
+          child = const Icon(
+            Icons.image_not_supported,
+            color: Colors.orange,
+            size: 40,
+          );
         }
+      } else {
+        // Treat as server-side filename or relative path
+        final url = '${ApiService.baseUrl}/products/images/$path';
+        child = Image.network(
+          url,
+          fit: BoxFit.cover,
+          width: 80,
+          height: 80,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 80,
+              height: 80,
+              color: Colors.grey[100],
+              child: const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            _loadLocal();
+            return const Icon(Icons.broken_image, color: Colors.grey, size: 40);
+          },
+        );
       }
     } else {
       child = const Icon(
