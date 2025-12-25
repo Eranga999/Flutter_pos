@@ -37,46 +37,102 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text('Product Categories'),
-        backgroundColor: const Color(0xFF324137),
-      ),
-      body: Column(
-        children: [
-          _buildHeaderActions(provider),
-          const SizedBox(height: 8),
-          _buildStats(provider.categories.length, filtered.length),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search categories...',
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Custom Header matching POS screen
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF324137), Colors.black],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                prefixIcon: const Icon(Icons.search),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
+                  ),
+                ],
               ),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: provider.loading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    onRefresh: () => provider.fetchCategories(),
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, i) =>
-                          _CategoryCard(category: filtered[i]),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                   ),
-          ),
-        ],
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'Product Categories',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 40),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  _buildHeaderActions(provider),
+                  const SizedBox(height: 8),
+                  _buildStats(provider.categories.length, filtered.length),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search categories...',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        prefixIcon: const Icon(Icons.search),
+                      ),
+                      onChanged: (v) => setState(() => _query = v),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: provider.loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : RefreshIndicator(
+                            onRefresh: () => provider.fetchCategories(),
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: filtered.length,
+                              itemBuilder: (context, i) =>
+                                  _CategoryCard(category: filtered[i]),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: const Color(0xFF2E7D32),
