@@ -48,7 +48,7 @@ class Discount {
           : null,
       maxUses: json['maxUses'],
       usedCount: json['usedCount'] ?? 0,
-      isActive: json['isActive'] ?? false,
+      isActive: json['isActive'] ?? true,
       isGlobal: isGlobal,
     );
   }
