@@ -191,30 +191,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.category),
-              title: const Text('Manage Categories'),
-              onTap: () {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Categories management coming soon'),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.local_shipping),
-              title: const Text('Manage Suppliers'),
-              onTap: () {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Supplier management coming soon'),
-                  ),
-                );
-              },
-            ),
           ],
         ),
         actions: [
