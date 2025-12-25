@@ -112,19 +112,43 @@ class ReportsProvider extends ChangeNotifier {
         if (cart != null) {
           for (final item in cart) {
             final itemMap = item as Map<String, dynamic>;
-            final productName = itemMap['productName'] ?? 'Unknown';
-            final quantity = itemMap['quantity'] ?? 0;
-            final unitPrice = itemMap['unitPrice'] ?? 0;
+
+            // Robustly extract product fields with fallbacks
+            final productName =
+                (itemMap['productName'] ??
+                        itemMap['name'] ??
+                        (itemMap['product'] is Map
+                            ? (itemMap['product'] as Map)['name']
+                            : null) ??
+                        'Unknown')
+                    .toString();
+
+            final quantity =
+                (itemMap['quantity'] ?? itemMap['qty'] ?? 0) as num;
+            final unitPrice =
+                (itemMap['unitPrice'] ??
+                        itemMap['price'] ??
+                        itemMap['sellingPrice'] ??
+                        (itemMap['product'] is Map
+                            ? (itemMap['product'] as Map)['sellingPrice']
+                            : 0) ??
+                        0)
+                    as num;
+
+            final revenue = (quantity.toDouble() * unitPrice.toDouble());
 
             if (productMap.containsKey(productName)) {
-              productMap[productName]!['quantity'] += quantity;
-              productMap[productName]!['revenue'] +=
-                  ((quantity as num) * (unitPrice as num)).toDouble();
+              productMap[productName]!['quantity'] =
+                  (productMap[productName]!['quantity'] as num) + quantity;
+              productMap[productName]!['revenue'] =
+                  (productMap[productName]!['revenue'] as num) + revenue;
+              // Keep last seen unit price
+              productMap[productName]!['price'] = unitPrice;
             } else {
               productMap[productName] = {
                 'name': productName,
                 'quantity': quantity,
-                'revenue': ((quantity as num) * (unitPrice as num)).toDouble(),
+                'revenue': revenue,
                 'price': unitPrice,
               };
             }

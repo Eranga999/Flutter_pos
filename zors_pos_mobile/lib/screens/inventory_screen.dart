@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../providers/product_provider.dart';
 import '../models/product.dart';
 import 'add_product_screen.dart';
+import '../services/api_service.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -19,17 +20,27 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _query = '';
   String? _selectedCategoryFilter;
   String _stockFilter = 'all'; // 'all', 'low', 'inStock'
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final provider = Provider.of<ProductProvider>(context, listen: false);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      final provider = Provider.of<ProductProvider>(context, listen: false);
+      _initialized = true;
+      // Defer provider notifications until after first frame to avoid
+      // setState/markNeedsBuild during build errors.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         provider.fetchProducts();
         provider.fetchCategories();
-      }
-    });
+      });
+    }
   }
 
   @override
@@ -652,23 +663,11 @@ class _ProductImage extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget child;
     if (base64 != null && base64!.isNotEmpty) {
-      try {
-        // Remove data URL prefix if present (e.g., "data:image/png;base64,")
-        String cleanBase64 = base64!.trim();
-
-        // Remove common data URL prefixes
-        if (cleanBase64.startsWith('data:')) {
-          final parts = cleanBase64.split(',');
-          if (parts.length > 1) {
-            cleanBase64 = parts[1];
-          }
-        }
-
-        // Remove any whitespace or newlines
-        cleanBase64 = cleanBase64.replaceAll(RegExp(r'\s+'), '');
-
-        child = Image.memory(
-          base64Decode(cleanBase64),
+      // If `image` is a relative path (productId/filename), load via network
+      if (base64!.contains('/')) {
+        final url = '${ApiService.baseUrl}/products/images/${base64!}';
+        child = Image.network(
+          url,
           fit: BoxFit.cover,
           width: 80,
           height: 80,
@@ -676,8 +675,31 @@ class _ProductImage extends StatelessWidget {
             return const Icon(Icons.broken_image, color: Colors.grey, size: 40);
           },
         );
-      } catch (e) {
-        child = const Icon(Icons.broken_image, color: Colors.grey, size: 40);
+      } else {
+        // Fallback: treat as base64 data URL/content
+        try {
+          String cleanBase64 = base64!.trim();
+          if (cleanBase64.startsWith('data:')) {
+            final parts = cleanBase64.split(',');
+            if (parts.length > 1) cleanBase64 = parts[1];
+          }
+          cleanBase64 = cleanBase64.replaceAll(RegExp(r'\s+'), '');
+          child = Image.memory(
+            base64Decode(cleanBase64),
+            fit: BoxFit.cover,
+            width: 80,
+            height: 80,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(
+                Icons.broken_image,
+                color: Colors.grey,
+                size: 40,
+              );
+            },
+          );
+        } catch (e) {
+          child = const Icon(Icons.broken_image, color: Colors.grey, size: 40);
+        }
       }
     } else {
       child = const Icon(
