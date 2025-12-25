@@ -51,14 +51,17 @@ class Product {
       discount: (json['discount'] ?? 0).toDouble(),
       size: json['size'],
       dryfood: json['dryfood'] ?? false,
-      createdAt: DateTime.parse(json['createdAt'] ?? DateTime.now().toIso8601String()),
-      updatedAt: DateTime.parse(json['updatedAt'] ?? DateTime.now().toIso8601String()),
+      createdAt: DateTime.parse(
+        json['createdAt'] ?? DateTime.now().toIso8601String(),
+      ),
+      updatedAt: DateTime.parse(
+        json['updatedAt'] ?? DateTime.now().toIso8601String(),
+      ),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      '_id': id,
+    final map = <String, dynamic>{
       'name': name,
       'description': description,
       'category': category,
@@ -75,5 +78,10 @@ class Product {
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
+    // Only include _id when present; let server generate otherwise
+    if (id.isNotEmpty) {
+      map['_id'] = id;
+    }
+    return map;
   }
 }

@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import 'pos_screen.dart';
 import 'category_screen.dart';
 import 'reports_screen.dart';
+import 'inventory_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
@@ -55,30 +56,33 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   children: [
                     // First Row: POS and Inventory
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildMenuCard(
-                          context,
-                          label: 'POS',
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const PosScreen(),
-                              ),
-                            );
-                          },
+                        Expanded(
+                          child: _buildMenuCard(
+                            context,
+                            label: 'POS',
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const PosScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                        _buildMenuCard(
-                          context,
-                          label: 'Inventory',
-                          onTap: () {
-                            // Navigate to Inventory screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Inventory feature coming soon'),
-                              ),
-                            );
-                          },
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildMenuCard(
+                            context,
+                            label: 'Inventory',
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const InventoryScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -87,29 +91,33 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 
                     // Second Row: Reports and Category
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _buildMenuCard(
-                          context,
-                          label: 'Reports',
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const ReportsScreen(),
-                              ),
-                            );
-                          },
+                        Expanded(
+                          child: _buildMenuCard(
+                            context,
+                            label: 'Reports',
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const ReportsScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                        _buildMenuCard(
-                          context,
-                          label: 'Category',
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const CategoryScreen(),
-                              ),
-                            );
-                          },
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildMenuCard(
+                            context,
+                            label: 'Category',
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const CategoryScreen(),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -229,7 +237,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(25),
       child: Container(
-        width: 172,
+        width: double.infinity,
         height: 189,
         decoration: BoxDecoration(
           color: Colors.white,

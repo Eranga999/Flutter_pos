@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://10.0.2.2:5000/api';
+  static const String baseUrl = 'http://188.166.230.230:5000/api';
   // For Android emulator use: http://10.0.2.2:5000/api
   // For Windows desktop use: http://188.166.230.230:5000/api
   // For physical device, change localhost to your computer's IP
@@ -431,6 +431,58 @@ class ApiService {
         return {'success': true, 'data': data};
       } else {
         return {'success': false, 'message': 'Failed to create customer'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  // SUPPLIER ENDPOINTS
+  static Future<Map<String, dynamic>> getSuppliers() async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.get(
+        Uri.parse('$baseUrl/suppliers'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['data'] != null) {
+          return {'success': true, 'data': data['data']};
+        }
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'message': 'Failed to fetch suppliers'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createSupplier(
+    Map<String, dynamic> supplierData,
+  ) async {
+    try {
+      final headers = await getHeaders();
+      final response = await http.post(
+        Uri.parse('$baseUrl/suppliers'),
+        headers: headers,
+        body: jsonEncode(supplierData),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message':
+              errorData['error'] ??
+              errorData['message'] ??
+              'Failed to create supplier',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': e.toString()};
