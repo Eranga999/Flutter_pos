@@ -26,92 +26,156 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: const Text(
-          'Business Reports',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF324137),
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.download, color: Colors.white),
-            onPressed: () => _exportCsv(provider),
-          ),
-        ],
-      ),
-      body: provider.loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Custom Header matching POS screen
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF324137), Colors.black],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
                 children: [
-                  // Description
-                  Text(
-                    'Comprehensive insights into your business performance',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Date Filter
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: DropdownButton<String>(
-                      value: provider.dateFilter,
-                      isExpanded: true,
-                      underline: const SizedBox(),
-                      items: const [
-                        DropdownMenuItem(
-                          value: '7',
-                          child: Text('Last 7 Days'),
-                        ),
-                        DropdownMenuItem(
-                          value: '30',
-                          child: Text('Last 30 Days'),
-                        ),
-                        DropdownMenuItem(
-                          value: '90',
-                          child: Text('Last 90 Days'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          context.read<ReportsProvider>().fetchReports(value);
-                        }
-                      },
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.white,
+                        size: 24,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-
-                  // Business performance cards
-                  _buildPerformanceCards(provider),
-                  const SizedBox(height: 20),
-
-                  // Sales Performance Chart
-                  _buildSalesPerformanceChart(provider),
-                  const SizedBox(height: 20),
-
-                  // Top Selling Products
-                  _buildTopProductsSection(provider),
-                  const SizedBox(height: 20),
-
-                  // Summary Stats
-                  _buildSummaryStatsSection(provider),
-                  const SizedBox(height: 20),
-
-                  // Business Insights
-                  _buildBusinessInsightsSection(provider),
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'Business Reports',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _exportCsv(provider),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.download,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
+            // Body
+            Expanded(
+              child: provider.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Description
+                          Text(
+                            'Comprehensive insights into your business performance',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Date Filter
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: DropdownButton<String>(
+                              value: provider.dateFilter,
+                              isExpanded: true,
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: '7',
+                                  child: Text('Last 7 Days'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '30',
+                                  child: Text('Last 30 Days'),
+                                ),
+                                DropdownMenuItem(
+                                  value: '90',
+                                  child: Text('Last 90 Days'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  context.read<ReportsProvider>().fetchReports(
+                                    value,
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Business performance cards
+                          _buildPerformanceCards(provider),
+                          const SizedBox(height: 20),
+
+                          // Sales Performance Chart
+                          _buildSalesPerformanceChart(provider),
+                          const SizedBox(height: 20),
+
+                          // Top Selling Products
+                          _buildTopProductsSection(provider),
+                          const SizedBox(height: 20),
+
+                          // Summary Stats
+                          _buildSummaryStatsSection(provider),
+                          const SizedBox(height: 20),
+
+                          // Business Insights
+                          _buildBusinessInsightsSection(provider),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
