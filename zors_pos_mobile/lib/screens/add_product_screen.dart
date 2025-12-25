@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/product.dart';
+import '../models/category.dart';
 import '../providers/product_provider.dart';
 
 class AddProductScreen extends StatefulWidget {
@@ -17,8 +18,6 @@ class AddProductScreen extends StatefulWidget {
 class _AddProductScreenState extends State<AddProductScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
-  final _categoryCtrl = TextEditingController();
-  final _supplierCtrl = TextEditingController();
   final _costCtrl = TextEditingController(text: '0');
   final _sellCtrl = TextEditingController(text: '0');
   final _discountCtrl = TextEditingController(text: '0');
@@ -27,16 +26,39 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final _sizeCtrl = TextEditingController();
   final _barcodeCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
+
+  String? _selectedCategory;
+  String? _selectedSupplier;
   bool _dryFood = false;
   String? _imageBase64;
+  String? _imageFileName;
+  List<int>? _imageBytes;
 
   final _picker = ImagePicker();
+  List<String> _suppliers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final provider = Provider.of<ProductProvider>(context, listen: false);
+        provider.fetchCategories();
+        // Fetch suppliers if needed
+        _loadSuppliers();
+      }
+    });
+  }
+
+  void _loadSuppliers() {
+    // TODO: Fetch suppliers from API if available
+    // For now, using hardcoded list or fetch from provider
+    _suppliers = ['Supplier A', 'Supplier B', 'Supplier C'];
+  }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _categoryCtrl.dispose();
-    _supplierCtrl.dispose();
     _costCtrl.dispose();
     _sellCtrl.dispose();
     _discountCtrl.dispose();
@@ -51,23 +73,59 @@ class _AddProductScreenState extends State<AddProductScreen> {
   Future<void> _pickImage() async {
     final res = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 60,
+      imageQuality: 5, // Extremely aggressive compression
+      maxWidth: 300, // Very small dimensions
+      maxHeight: 300,
     );
     if (res != null) {
-      // Use XFile API to support web and mobile
       final bytes = await res.readAsBytes();
-      setState(() => _imageBase64 = base64Encode(bytes));
+      setState(() {
+        _imageBytes = bytes;
+        _imageBase64 = base64Encode(bytes);
+        _imageFileName = res.name;
+      });
+      print(
+        'Image selected: ${bytes.length} bytes (base64: ${_imageBase64!.length} chars)',
+      );
     }
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a category')));
+      return;
+    }
+
     final provider = Provider.of<ProductProvider>(context, listen: false);
+
+    // Store image locally (in-app) if selected
+    String? imageData;
+    if (_imageBase64 != null) {
+      final base64Size = _imageBase64!.length;
+      print('Base64 image size: $base64Size characters');
+
+      // If image is too large (> 500KB base64), skip it to avoid payload errors
+      if (base64Size > 500000) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image too large. Creating product without image...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        imageData = null; // Skip image
+      } else {
+        imageData = _imageBase64;
+        print('Image stored: $base64Size chars');
+      }
+    }
 
     final product = Product(
       id: '', // server will assign _id
       name: _nameCtrl.text.trim(),
-      category: _categoryCtrl.text.trim(),
+      category: _selectedCategory!,
       description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
       costPrice: double.tryParse(_costCtrl.text) ?? 0,
       sellingPrice: double.tryParse(_sellCtrl.text) ?? 0,
@@ -76,10 +134,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       barcode: _barcodeCtrl.text.trim().isEmpty
           ? null
           : _barcodeCtrl.text.trim(),
-      image: _imageBase64,
-      supplier: _supplierCtrl.text.trim().isEmpty
-          ? null
-          : _supplierCtrl.text.trim(),
+      image: imageData, // Store base64 image (or null if too large)
+      supplier: _selectedSupplier,
       discount: double.tryParse(_discountCtrl.text) ?? 0,
       size: _sizeCtrl.text.trim().isEmpty ? null : _sizeCtrl.text.trim(),
       dryfood: _dryFood,
@@ -156,14 +212,31 @@ class _AddProductScreenState extends State<AddProductScreen> {
                         style: BorderStyle.solid,
                       ),
                     ),
-                    child: Center(
-                      child: Text(
-                        _imageBase64 == null
-                            ? 'Tap to upload image (Max 5MB)'
-                            : 'Image selected',
-                        style: const TextStyle(color: Colors.black54),
-                      ),
-                    ),
+                    child: _imageBase64 != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.memory(
+                              base64Decode(_imageBase64!),
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(
+                                  Icons.image,
+                                  size: 40,
+                                  color: Colors.black54,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Tap to upload image',
+                                  style: TextStyle(color: Colors.black54),
+                                ),
+                              ],
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -177,19 +250,67 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                _LabeledField(
-                  label: 'Category *',
-                  controller: _categoryCtrl,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  hintText: 'Select category',
+                // Category Dropdown
+                Consumer<ProductProvider>(
+                  builder: (context, provider, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Category *'),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: _selectedCategory,
+                        hint: const Text('Select a category'),
+                        items: provider.categories
+                            .map(
+                              (cat) => DropdownMenuItem<String>(
+                                value: cat.name,
+                                child: Text(cat.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => _selectedCategory = value),
+                        validator: (v) =>
+                            v == null ? 'Please select a category' : null,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          isDense: true,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
 
-                _LabeledField(
-                  label: 'Supplier',
-                  controller: _supplierCtrl,
-                  hintText: 'Select supplier',
+                // Supplier Dropdown
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Supplier'),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      value: _selectedSupplier,
+                      hint: const Text('Select supplier (optional)'),
+                      items: _suppliers
+                          .map(
+                            (supplier) => DropdownMenuItem<String>(
+                              value: supplier,
+                              child: Text(supplier),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _selectedSupplier = value),
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
 
