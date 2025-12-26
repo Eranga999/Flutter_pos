@@ -6,7 +6,6 @@ import 'dart:convert';
 import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
 import '../services/api_service.dart';
-import '../models/discount.dart';
 import 'receipt_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -20,28 +19,25 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     with TickerProviderStateMixin {
   String _selectedPaymentMethod = 'cash';
   bool _isProcessing = false;
-  final TextEditingController _notesController = TextEditingController();
   final TextEditingController _cashGivenController = TextEditingController();
   final TextEditingController _cardReferenceController =
       TextEditingController();
   final TextEditingController _customerNameController = TextEditingController(
     text: "CUSTOMER",
   );
+  final TextEditingController _discountController = TextEditingController(
+    text: "0",
+  );
 
   // Focus nodes
   final FocusNode _customerNameFocusNode = FocusNode();
   final FocusNode _cashFocusNode = FocusNode();
   final FocusNode _cardFocusNode = FocusNode();
-  final FocusNode _notesFocusNode = FocusNode();
+  final FocusNode _discountFocusNode = FocusNode();
   bool _isCustomerNameFocused = false;
   bool _isCashFocused = false;
   bool _isCardFocused = false;
-  bool _isNotesFocused = false;
-
-  List<Discount> _availableDiscounts = [];
-  Discount? _selectedDiscount;
-  Discount? _globalDiscount;
-  bool _isLoadingDiscounts = true;
+  bool _isDiscountFocused = false;
 
   // Animation controllers
   late AnimationController _headerController;
@@ -54,7 +50,6 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     super.initState();
     _initAnimations();
     _setupFocusListeners();
-    _loadDiscounts();
   }
 
   void _initAnimations() {
@@ -92,75 +87,27 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     _cardFocusNode.addListener(() {
       setState(() => _isCardFocused = _cardFocusNode.hasFocus);
     });
-    _notesFocusNode.addListener(() {
-      setState(() => _isNotesFocused = _notesFocusNode.hasFocus);
+    _discountFocusNode.addListener(() {
+      setState(() => _isDiscountFocused = _discountFocusNode.hasFocus);
     });
   }
 
-  Future<void> _loadDiscounts() async {
-    try {
-      final result = await ApiService.getDiscounts();
-      if (result['success'] == true && result['data'] != null) {
-        final discounts = (result['data'] as List)
-            .map((json) => Discount.fromJson(json))
-            .toList();
-
-        setState(() {
-          _availableDiscounts = discounts;
-          // Find global discount
-          try {
-            _globalDiscount = discounts.firstWhere((d) => d.isGlobal);
-          } catch (e) {
-            _globalDiscount = null;
-          }
-          // Auto-apply global discount if it exists
-          if (_globalDiscount != null) {
-            _selectedDiscount = _globalDiscount;
-            _applyDiscount();
-          }
-          _isLoadingDiscounts = false;
-        });
-      } else {
-        setState(() => _isLoadingDiscounts = false);
-      }
-    } catch (e) {
-      print('Error loading discounts: $e');
-      setState(() => _isLoadingDiscounts = false);
-    }
-  }
-
   void _applyDiscount() {
-    if (_selectedDiscount == null) {
-      context.read<OrderProvider>().setDiscount(0.0);
-      return;
-    }
-
-    final orderProvider = context.read<OrderProvider>();
-    final subtotal = orderProvider.cartItems.fold<double>(
-      0.0,
-      (sum, item) => sum + (item.unitPrice * item.quantity),
-    );
-
-    double discountAmount = 0.0;
-    if (_selectedDiscount!.discountType == 'percentage') {
-      discountAmount = subtotal * (_selectedDiscount!.discountValue / 100);
-    } else {
-      discountAmount = _selectedDiscount!.discountValue;
-    }
-
-    orderProvider.setDiscount(discountAmount);
+    final discountAmount =
+        double.tryParse(_discountController.text.trim()) ?? 0.0;
+    context.read<OrderProvider>().setDiscount(discountAmount);
   }
 
   @override
   void dispose() {
-    _notesController.dispose();
     _cashGivenController.dispose();
     _cardReferenceController.dispose();
     _customerNameController.dispose();
+    _discountController.dispose();
     _customerNameFocusNode.dispose();
     _cashFocusNode.dispose();
     _cardFocusNode.dispose();
-    _notesFocusNode.dispose();
+    _discountFocusNode.dispose();
     _headerController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -377,7 +324,6 @@ class _CheckoutScreenState extends State<CheckoutScreen>
           : 0.0;
 
       // Build cart items matching backend CartItem interface exactly
-      // Backend expects: { product: { _id, shortId, name, costPrice, sellingPrice, discount, category, size, dryfood, image, stock, description, barcode, supplier }, quantity, subtotal, note }
       final cartItems = orderProvider.cartItems.map((item) {
         final product = productProvider.getProductById(item.productId);
         return {
@@ -439,24 +385,12 @@ class _CheckoutScreenState extends State<CheckoutScreen>
         'customer': customer,
         'cashier': cashier,
         'orderType': 'takeaway',
-        'kitchenNote': _notesController.text.isNotEmpty
-            ? _notesController.text
-            : null,
         'status': 'completed',
         'paymentDetails': paymentDetails,
         'tableCharge': 0,
         'deliveryCharge': 0,
         'discountPercentage': discountPercentage,
         'totalAmount': total,
-        // Add appliedCoupon if a discount is selected (matching backend Coupon interface)
-        if (_selectedDiscount != null)
-          'appliedCoupon': {
-            'code': _selectedDiscount!.codeOrName,
-            'discount': _selectedDiscount!.discountValue,
-            'type': _selectedDiscount!.discountType,
-            'description':
-                '${_selectedDiscount!.codeOrName} - ${_selectedDiscount!.discountValue}${_selectedDiscount!.discountType == 'percentage' ? '%' : ' Rs.'} off',
-          },
       };
 
       // Call backend API to create order
@@ -597,11 +531,11 @@ class _CheckoutScreenState extends State<CheckoutScreen>
                           // Discount Section
                           _buildSectionTitle(
                             icon: Icons.local_offer_rounded,
-                            title: 'Apply Discount',
+                            title: 'Discount',
                             iconColor: Colors.purple,
                           ),
                           const SizedBox(height: 12),
-                          _buildDiscountSection(),
+                          _buildDiscountField(subtotal),
                           const SizedBox(height: 24),
 
                           // Payment Method Section
@@ -619,17 +553,6 @@ class _CheckoutScreenState extends State<CheckoutScreen>
                             _buildCashPaymentDetails(total),
                           if (_selectedPaymentMethod == 'card')
                             _buildCardPaymentDetails(),
-
-                          // Notes Section
-                          _buildSectionTitle(
-                            icon: Icons.note_alt_rounded,
-                            title: 'Order Notes',
-                            subtitle: 'Optional',
-                            iconColor: Colors.orange,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildNotesField(),
-                          const SizedBox(height: 24),
 
                           // Total Section
                           _buildTotalSection(total),
@@ -1014,97 +937,116 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     );
   }
 
-  Widget _buildDiscountSection() {
-    if (_isLoadingDiscounts) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Color(0xFF324137)),
-            ),
+  Widget _buildDiscountField(double subtotal) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
-        ),
-      );
-    }
-
-    if (_availableDiscounts.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.info_outline_rounded,
-              color: Colors.grey.shade500,
-              size: 22,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.percent_rounded,
+                  color: Colors.purple.shade600,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Custom Discount Amount',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF324137),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: _isDiscountFocused
+                  ? [
+                      BoxShadow(
+                        color: Colors.purple.withOpacity(0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : [],
             ),
-            const SizedBox(width: 12),
-            Text(
-              'No discounts available',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
+            child: TextField(
+              controller: _discountController,
+              focusNode: _discountFocusNode,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _applyDiscount(),
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF324137),
+              ),
+              decoration: InputDecoration(
+                hintText: '0.00',
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixText: 'Rs. ',
+                prefixStyle: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600,
+                ),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: Colors.grey.shade200,
+                    width: 1.5,
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: Colors.purple.shade400,
+                    width: 2,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.all(18),
               ),
             ),
-          ],
-        ),
-      );
-    }
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _DiscountChip(
-          label: 'No Discount',
-          subtitle: 'Full price',
-          isSelected: _selectedDiscount == null,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            setState(() => _selectedDiscount = null);
-            _applyDiscount();
-          },
-        ),
-        if (_globalDiscount != null)
-          _DiscountChip(
-            label: _globalDiscount!.codeOrName,
-            subtitle:
-                '${_globalDiscount!.discountValue}${_globalDiscount!.discountType == 'percentage' ? '%' : ' Rs.'} off',
-            isSelected: _selectedDiscount?.id == _globalDiscount!.id,
-            isGlobal: true,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _selectedDiscount = _globalDiscount);
-              _applyDiscount();
-            },
           ),
-        ..._availableDiscounts
-            .where((d) => !d.isGlobal)
-            .map(
-              (d) => _DiscountChip(
-                label: d.codeOrName,
-                subtitle:
-                    '${d.discountValue}${d.discountType == 'percentage' ? '%' : ' Rs.'} off',
-                isSelected: _selectedDiscount?.id == d.id,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _selectedDiscount = d);
-                  _applyDiscount();
-                },
-              ),
-            ),
-      ],
+          const SizedBox(height: 12),
+          Text(
+            'Enter the discount amount to apply to this order',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1434,56 +1376,6 @@ class _CheckoutScreenState extends State<CheckoutScreen>
     );
   }
 
-  Widget _buildNotesField() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: _isNotesFocused
-            ? [
-                BoxShadow(
-                  color: Colors.orange.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : [],
-      ),
-      child: TextField(
-        controller: _notesController,
-        focusNode: _notesFocusNode,
-        maxLines: 3,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: Color(0xFF324137),
-        ),
-        decoration: InputDecoration(
-          hintText: 'Add special instructions...',
-          hintStyle: TextStyle(
-            color: Colors.grey.shade400,
-            fontWeight: FontWeight.w400,
-          ),
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Colors.grey.shade200, width: 1.5),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: Colors.orange.shade400, width: 2),
-          ),
-          contentPadding: const EdgeInsets.all(18),
-        ),
-      ),
-    );
-  }
-
   Widget _buildTotalSection(double total) {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -1672,139 +1564,6 @@ class _AnimatedIconButtonState extends State<_AnimatedIconButton> {
   }
 }
 
-class _DiscountChip extends StatefulWidget {
-  final String label;
-  final String subtitle;
-  final bool isSelected;
-  final bool isGlobal;
-  final VoidCallback onTap;
-
-  const _DiscountChip({
-    required this.label,
-    required this.subtitle,
-    required this.isSelected,
-    this.isGlobal = false,
-    required this.onTap,
-  });
-
-  @override
-  State<_DiscountChip> createState() => _DiscountChipState();
-}
-
-class _DiscountChipState extends State<_DiscountChip> {
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) {
-        setState(() => _isPressed = false);
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _isPressed = false),
-      child: AnimatedScale(
-        scale: _isPressed ? 0.95 : 1.0,
-        duration: const Duration(milliseconds: 100),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: widget.isSelected ? const Color(0xFF324137) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: widget.isSelected
-                  ? const Color(0xFF324137)
-                  : Colors.grey.shade300,
-              width: 1.5,
-            ),
-            boxShadow: widget.isSelected
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFF324137).withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.isGlobal) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.isSelected
-                        ? const Color(0xFFC8E260)
-                        : Colors.purple.shade100,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'AUTO',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: widget.isSelected
-                          ? const Color(0xFF324137)
-                          : Colors.purple.shade700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: widget.isSelected
-                          ? Colors.white
-                          : const Color(0xFF324137),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    widget.subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: widget.isSelected
-                          ? Colors.white.withOpacity(0.8)
-                          : Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.isSelected) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFC8E260),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 12,
-                    color: Color(0xFF324137),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _PaymentMethodCard extends StatefulWidget {
   final IconData icon;
   final String label;
@@ -1904,7 +1663,7 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard> {
                   ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFC8E260),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
                     'Selected',
@@ -1914,9 +1673,7 @@ class _PaymentMethodCardState extends State<_PaymentMethodCard> {
                       color: Color(0xFF324137),
                     ),
                   ),
-                )
-              else
-                const SizedBox(height: 20),
+                ),
             ],
           ),
         ),

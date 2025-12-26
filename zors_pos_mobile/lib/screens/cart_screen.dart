@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
 import '../providers/product_provider.dart';
-import '../services/api_service.dart';
-import '../models/discount.dart';
 import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
@@ -16,12 +14,6 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
-  final String _selectedPaymentMethod = 'cash';
-  List<Discount> _discounts = [];
-  Discount? _selectedDiscount;
-  Discount? _globalDiscount;
-  bool _loadingDiscounts = false;
-  double _lastDiscountAmount = 0.0;
 
   // Animation controllers
   late AnimationController _headerController;
@@ -33,7 +25,6 @@ class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _initAnimations();
-    _fetchDiscounts();
   }
 
   void _initAnimations() {
@@ -69,76 +60,9 @@ class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Future<void> _fetchDiscounts() async {
-    setState(() => _loadingDiscounts = true);
-    final res = await ApiService.getDiscounts();
-    if (res['success'] == true) {
-      final list = (res['data'] as List)
-          .map((d) => Discount.fromJson(d))
-          .where((d) => d.isActive)
-          .toList();
-
-      // Identify global discount by flag
-      final global = list.firstWhere(
-        (d) => d.isGlobal,
-        orElse: () => Discount(
-          id: '',
-          codeOrName: '',
-          description: null,
-          discountType: 'fixed',
-          discountValue: 0,
-          minAmount: null,
-          maxUses: null,
-          usedCount: 0,
-          isActive: false,
-          isGlobal: false,
-        ),
-      );
-      setState(() {
-        _discounts = list.where((d) => !d.isGlobal).toList();
-        _globalDiscount = global.isActive && global.isGlobal ? global : null;
-        _selectedDiscount = null;
-        _loadingDiscounts = false;
-      });
-    } else {
-      setState(() => _loadingDiscounts = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? 'Failed to load discounts')),
-        );
-      }
-    }
-  }
-
   void _handleNewOrder() {
     context.read<OrderProvider>().clearCart();
     _searchController.clear();
-    setState(() {
-      _selectedDiscount = null;
-    });
-  }
-
-  double _computeDiscountAmount(double subtotal) {
-    double amount = 0.0;
-    // Selected discount
-    if (_selectedDiscount != null) {
-      final d = _selectedDiscount!;
-      if (d.minAmount == null || subtotal >= (d.minAmount ?? 0)) {
-        amount += d.discountType == 'percentage'
-            ? (subtotal * d.discountValue) / 100
-            : d.discountValue;
-      }
-    }
-    // Global discount (automatic)
-    if (_globalDiscount != null) {
-      final g = _globalDiscount!;
-      if (g.minAmount == null || subtotal >= (g.minAmount ?? 0)) {
-        amount += g.discountType == 'percentage'
-            ? (subtotal * g.discountValue) / 100
-            : g.discountValue;
-      }
-    }
-    return amount;
   }
 
   void _handleProceedToCheckout() {
@@ -169,16 +93,7 @@ class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
               0.0,
               (sum, item) => sum + (item.unitPrice * item.quantity),
             );
-            final discountAmount = _computeDiscountAmount(subtotal);
-
-            // Update discount only if it changed
-            if (_lastDiscountAmount != discountAmount) {
-              _lastDiscountAmount = discountAmount;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                orderProvider.setDiscount(discountAmount);
-              });
-            }
-
+            final discountAmount = orderProvider.discount;
             final total = subtotal - discountAmount;
             final itemCount = orderProvider.cartItems.fold<int>(
               0,
@@ -219,10 +134,6 @@ class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
 
                                 // Quantity Adjusters
                                 _buildQuantitySection(orderProvider),
-                                const SizedBox(height: 20),
-
-                                // Discount Selection
-                                _buildDiscountSection(subtotal),
                                 const SizedBox(height: 20),
 
                                 // Order Summary
@@ -617,174 +528,6 @@ class _CartScreenState extends State<CartScreen> with TickerProviderStateMixin {
           },
         ),
       ],
-    );
-  }
-
-  Widget _buildDiscountSection(double subtotal) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.local_offer_rounded,
-                      color: Colors.purple.shade400,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Apply Discount',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF324137),
-                    ),
-                  ),
-                ],
-              ),
-              if (_loadingDiscounts)
-                const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Color(0xFF324137)),
-                  ),
-                )
-              else
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.lightImpact();
-                    _fetchDiscounts();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF324137).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.refresh_rounded,
-                          size: 14,
-                          color: Color(0xFF324137),
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          'Refresh',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF324137),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Discount chips
-          if (_discounts.isNotEmpty)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _DiscountChip(
-                  label: 'No Discount',
-                  isSelected: _selectedDiscount == null,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _selectedDiscount = null);
-                  },
-                ),
-                ..._discounts.map(
-                  (d) => _DiscountChip(
-                    label: d.discountType == 'percentage'
-                        ? '${d.codeOrName} (${d.discountValue.toStringAsFixed(0)}%)'
-                        : '${d.codeOrName} (Rs.${d.discountValue.toStringAsFixed(0)})',
-                    isSelected: _selectedDiscount?.id == d.id,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _selectedDiscount = d);
-                    },
-                  ),
-                ),
-              ],
-            )
-          else if (!_loadingDiscounts)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No discounts available',
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                ),
-              ),
-            ),
-          // Global discount info
-          if (_globalDiscount != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: Colors.green.shade600,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Global discount applied: ${_globalDiscount!.discountType == 'percentage' ? '${_globalDiscount!.discountValue.toStringAsFixed(0)}%' : 'Rs.${_globalDiscount!.discountValue.toStringAsFixed(0)}'} off',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 
@@ -1404,65 +1147,6 @@ class _QuantityButtonState extends State<_QuantityButton> {
             widget.icon,
             size: 18,
             color: widget.isEnabled ? Colors.white : Colors.grey.shade500,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DiscountChip extends StatefulWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _DiscountChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  State<_DiscountChip> createState() => _DiscountChipState();
-}
-
-class _DiscountChipState extends State<_DiscountChip> {
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) {
-        setState(() => _isPressed = false);
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _isPressed = false),
-      child: AnimatedScale(
-        scale: _isPressed ? 0.95 : 1.0,
-        duration: const Duration(milliseconds: 100),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: widget.isSelected
-                ? const Color(0xFF324137)
-                : Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: widget.isSelected
-                  ? const Color(0xFF324137)
-                  : Colors.grey.shade300,
-              width: 1.5,
-            ),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: widget.isSelected ? Colors.white : Colors.grey.shade700,
-            ),
           ),
         ),
       ),
