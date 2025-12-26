@@ -359,11 +359,6 @@ class _LoginScreenState extends State<LoginScreen>
           height: 80,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF324137), Color(0xFF4a5d4f)],
-            ),
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
