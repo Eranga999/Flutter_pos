@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -23,7 +24,8 @@ class AddProductScreen extends StatefulWidget {
   State<AddProductScreen> createState() => _AddProductScreenState();
 }
 
-class _AddProductScreenState extends State<AddProductScreen> {
+class _AddProductScreenState extends State<AddProductScreen>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _costCtrl = TextEditingController(text: '0');
@@ -39,18 +41,33 @@ class _AddProductScreenState extends State<AddProductScreen> {
   String? _selectedSupplier;
   bool _dryFood = false;
   XFile? _pickedImage;
-  Uint8List? _pickedImageBytes; // for web preview/upload
-  String? _existingImageBase64; // for edit mode (may be path)
-  String? _originalBarcode; // Store original barcode for edit mode
+  Uint8List? _pickedImageBytes;
+  String? _existingImageBase64;
+  String? _originalBarcode;
+  bool _isSubmitting = false;
 
   final _picker = ImagePicker();
   List<Map<String, String>> _suppliers = [];
+
+  // Animation controllers
+  late AnimationController _headerController;
+  late AnimationController _contentController;
+  late Animation<double> _headerAnimation;
+  late Animation<double> _contentAnimation;
+
+  // Focus nodes
+  final _nameFocus = FocusNode();
+  final _costFocus = FocusNode();
+  final _sellFocus = FocusNode();
+  final _stockFocus = FocusNode();
 
   bool get isEditMode => widget.product != null;
 
   @override
   void initState() {
     super.initState();
+    _initAnimations();
+
     // Pre-fill if editing
     if (isEditMode) {
       final p = widget.product!;
@@ -69,15 +86,40 @@ class _AddProductScreenState extends State<AddProductScreen> {
           : null;
       _dryFood = p.dryfood ?? false;
       _existingImageBase64 = p.image;
-      _originalBarcode = p.barcode; // Store original barcode
+      _originalBarcode = p.barcode;
     }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final provider = Provider.of<ProductProvider>(context, listen: false);
         provider.fetchCategories();
-        // Fetch suppliers if needed
         _loadSuppliers();
       }
+    });
+  }
+
+  void _initAnimations() {
+    _headerController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _headerAnimation = CurvedAnimation(
+      parent: _headerController,
+      curve: Curves.easeOut,
+    );
+
+    _contentController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _contentAnimation = CurvedAnimation(
+      parent: _contentController,
+      curve: Curves.easeOutCubic,
+    );
+
+    _headerController.forward();
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) _contentController.forward();
     });
   }
 
@@ -127,16 +169,99 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _sizeCtrl.dispose();
     _barcodeCtrl.dispose();
     _descCtrl.dispose();
+    _nameFocus.dispose();
+    _costFocus.dispose();
+    _sellFocus.dispose();
+    _stockFocus.dispose();
+    _headerController.dispose();
+    _contentController.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage() async {
+    HapticFeedback.lightImpact();
+
+    // Show image source picker
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF324137).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.image_rounded,
+                    color: Color(0xFF324137),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Text(
+                  'Choose Image Source',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF324137),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _ImageSourceOption(
+                    icon: Icons.photo_library_rounded,
+                    label: 'Gallery',
+                    onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _ImageSourceOption(
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Camera',
+                    onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
     final res = await _picker.pickImage(
-      source: ImageSource.gallery,
+      source: source,
       maxWidth: 1200,
       imageQuality: 85,
     );
     if (res != null) {
+      HapticFeedback.mediumImpact();
       if (kIsWeb) {
         final bytes = await res.readAsBytes();
         setState(() {
@@ -161,13 +286,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedCategory == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a category')));
+    HapticFeedback.lightImpact();
+
+    if (!_formKey.currentState!.validate()) {
+      HapticFeedback.heavyImpact();
       return;
     }
+    if (_selectedCategory == null) {
+      HapticFeedback.heavyImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Please select a category'),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
     // Use multipart/form-data to include image file
     try {
       final uri = isEditMode
@@ -327,9 +474,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
         print('✅ Product ${isEditMode ? 'updated' : 'created'} successfully');
         if (mounted) {
+          HapticFeedback.mediumImpact();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isEditMode ? 'Product updated' : 'Product created'),
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Text(
+                    isEditMode
+                        ? 'Product updated successfully!'
+                        : 'Product created successfully!',
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF35AE4A),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
             ),
           );
           // Optionally refresh provider products
@@ -342,6 +506,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           Navigator.of(context).pop(true);
         }
       } else {
+        setState(() => _isSubmitting = false);
         String msg =
             'Failed to ${isEditMode ? 'update' : 'create'} product (${res.statusCode})';
         try {
@@ -351,7 +516,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
           } else if (json is Map && json['message'] is String) {
             msg = json['message'];
           } else if (json is Map) {
-            // Show the full error response for debugging
             msg += '\nDetails: ${json.toString()}';
           }
         } catch (e) {
@@ -359,16 +523,46 @@ class _AddProductScreenState extends State<AddProductScreen> {
               '\nResponse: ${body.length > 200 ? body.substring(0, 200) : body}';
         }
         if (mounted) {
+          HapticFeedback.heavyImpact();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(msg), duration: const Duration(seconds: 5)),
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(msg)),
+                ],
+              ),
+              backgroundColor: Colors.red.shade400,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
+              duration: const Duration(seconds: 5),
+            ),
           );
         }
       }
     } catch (e) {
+      setState(() => _isSubmitting = false);
       if (mounted) {
+        HapticFeedback.heavyImpact();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Error: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red.shade400,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
             duration: const Duration(seconds: 5),
           ),
         );
@@ -379,383 +573,979 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(isEditMode ? 'Edit Product' : 'Add New Product'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(40),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: const Text(
-              'Fill in the product details below',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ),
-        ),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.black.withOpacity(0.9),
-                Colors.black.withOpacity(0.75),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-      ),
+      backgroundColor: const Color(0xFFF8F9FA),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image uploader
-                Text(
-                  'Product Image',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: _pickImage,
-                  child: Container(
-                    height: 140,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC8E260).withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFC8E260),
-                        width: 1.6,
-                        style: BorderStyle.solid,
-                      ),
+        child: Column(
+          children: [
+            // Modern Header
+            FadeTransition(
+              opacity: _headerAnimation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.3),
+                  end: Offset.zero,
+                ).animate(_headerAnimation),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF324137), Color(0xFF1A2B1F)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: _pickedImage != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: kIsWeb
-                                ? (_pickedImageBytes != null
-                                      ? Image.memory(
-                                          _pickedImageBytes!,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : const Center(
-                                          child: Icon(
-                                            Icons.broken_image,
-                                            color: Colors.black54,
-                                          ),
-                                        ))
-                                : Image.file(
-                                    File(_pickedImage!.path),
-                                    fit: BoxFit.cover,
-                                  ),
-                          )
-                        : (_existingImageBase64 != null &&
-                              _existingImageBase64!.isNotEmpty)
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
-                            child: _existingImageBase64!.contains('/')
-                                ? Image.network(
-                                    '${ApiService.baseUrl}/products/images/${_existingImageBase64!}',
-                                    fit: BoxFit.cover,
-                                    loadingBuilder:
-                                        (context, child, loadingProgress) {
-                                          if (loadingProgress == null)
-                                            return child;
-                                          return Center(
-                                            child: CircularProgressIndicator(
-                                              value:
-                                                  loadingProgress
-                                                          .expectedTotalBytes !=
-                                                      null
-                                                  ? loadingProgress
-                                                            .cumulativeBytesLoaded /
-                                                        loadingProgress
-                                                            .expectedTotalBytes!
-                                                  : null,
-                                            ),
-                                          );
-                                        },
-                                    errorBuilder: (context, error, stackTrace) {
-                                      print(
-                                        'Error loading product image: $error',
-                                      );
-                                      return const Center(
-                                        child: Icon(
-                                          Icons.broken_image,
-                                          color: Colors.black54,
-                                        ),
-                                      );
-                                    },
-                                  )
-                                : Image.memory(
-                                    base64Decode(
-                                      _existingImageBase64!.contains(',')
-                                          ? _existingImageBase64!
-                                                .split(',')
-                                                .last
-                                          : _existingImageBase64!,
-                                    ),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return const Center(
-                                        child: Icon(
-                                          Icons.broken_image,
-                                          color: Colors.black54,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          )
-                        : Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const [
-                                Icon(
-                                  Icons.image,
-                                  size: 40,
-                                  color: Colors.black54,
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Tap to upload image',
-                                  style: TextStyle(color: Colors.black54),
-                                ),
-                              ],
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(32),
+                      bottomRight: Radius.circular(32),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF324137).withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              Navigator.pop(context, false);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
                             ),
                           ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                _LabeledField(
-                  label: 'Product Name *',
-                  controller: _nameCtrl,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  hintText: 'Enter product name',
-                ),
-                const SizedBox(height: 12),
-
-                // Category Dropdown
-                Consumer<ProductProvider>(
-                  builder: (context, provider, _) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Category *'),
-                      const SizedBox(height: 6),
-                      // Build unique category list and guard value
-                      DropdownButtonFormField<String>(
-                        value: () {
-                          final names = provider.categories
-                              .map((c) => c.name)
-                              .where((n) => n.isNotEmpty)
-                              .toSet();
-                          return (_selectedCategory != null &&
-                                  names.contains(_selectedCategory))
-                              ? _selectedCategory
-                              : null;
-                        }(),
-                        hint: const Text('Select a category'),
-                        items: provider.categories
-                            .map((cat) => cat.name)
-                            .where((n) => n.isNotEmpty)
-                            .toSet()
-                            .map(
-                              (name) => DropdownMenuItem<String>(
-                                value: name,
-                                child: Text(name),
+                          const Expanded(
+                            child: Center(
+                              child: Text(
+                                'Add Product',
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setState(() => _selectedCategory = value),
-                        validator: (v) =>
-                            v == null ? 'Please select a category' : null,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                          isDense: true,
+                          const SizedBox(width: 44),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isEditMode
+                                  ? Icons.edit_rounded
+                                  : Icons.add_box_rounded,
+                              color: const Color(0xFFC8E260),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                isEditMode
+                                    ? 'Update product information'
+                                    : 'Fill in the product details below',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+              ),
+            ),
 
-                // Supplier Dropdown
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Supplier'),
-                    const SizedBox(height: 6),
-                    // Build unique supplier IDs and guard value
-                    DropdownButtonFormField<String>(
-                      value: () {
-                        final ids = _suppliers
-                            .map((s) => (s['id'] ?? ''))
-                            .where((id) => id.isNotEmpty)
-                            .toSet();
-                        return (_selectedSupplier != null &&
-                                ids.contains(_selectedSupplier))
-                            ? _selectedSupplier
-                            : null;
-                      }(),
-                      hint: const Text('Select supplier (optional)'),
-                      items: _suppliers
-                          .map(
-                            (supplier) => DropdownMenuItem<String>(
-                              value: supplier['id'],
-                              child: Text(supplier['name'] ?? ''),
+            // Content
+            Expanded(
+              child: FadeTransition(
+                opacity: _contentAnimation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(_contentAnimation),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Image Section
+                          _buildSectionCard(
+                            title: 'Product Image',
+                            icon: Icons.image_rounded,
+                            child: _buildImagePicker(),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Basic Info Section
+                          _buildSectionCard(
+                            title: 'Basic Information',
+                            icon: Icons.info_outline_rounded,
+                            child: Column(
+                              children: [
+                                _ModernTextField(
+                                  label: 'Product Name',
+                                  hint: 'Enter product name',
+                                  controller: _nameCtrl,
+                                  icon: Icons.inventory_2_rounded,
+                                  isRequired: true,
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? 'Product name is required'
+                                      : null,
+                                ),
+                                const SizedBox(height: 16),
+                                _buildCategoryDropdown(),
+                                const SizedBox(height: 16),
+                                _buildSupplierDropdown(),
+                              ],
                             ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _selectedSupplier = value),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        isDense: true,
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Pricing Section
+                          _buildSectionCard(
+                            title: 'Pricing',
+                            icon: Icons.attach_money_rounded,
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ModernTextField(
+                                        label: 'Cost Price',
+                                        hint: '0.00',
+                                        controller: _costCtrl,
+                                        icon: Icons.money_off_rounded,
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        isRequired: true,
+                                        validator: (v) =>
+                                            (double.tryParse(v ?? '') == null)
+                                            ? 'Invalid'
+                                            : null,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _ModernTextField(
+                                        label: 'Selling Price',
+                                        hint: '0.00',
+                                        controller: _sellCtrl,
+                                        icon: Icons.paid_rounded,
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        isRequired: true,
+                                        validator: (v) =>
+                                            (double.tryParse(v ?? '') == null)
+                                            ? 'Invalid'
+                                            : null,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _ModernTextField(
+                                  label: 'Discount',
+                                  hint: '0',
+                                  controller: _discountCtrl,
+                                  icon: Icons.discount_rounded,
+                                  keyboardType: TextInputType.number,
+                                  suffix: const Text('%'),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Inventory Section
+                          _buildSectionCard(
+                            title: 'Inventory',
+                            icon: Icons.warehouse_rounded,
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ModernTextField(
+                                        label: 'Stock Quantity',
+                                        hint: '0',
+                                        controller: _stockCtrl,
+                                        icon: Icons.numbers_rounded,
+                                        keyboardType: TextInputType.number,
+                                        isRequired: true,
+                                        validator: (v) =>
+                                            (int.tryParse(v ?? '') == null)
+                                            ? 'Invalid'
+                                            : null,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _ModernTextField(
+                                        label: 'Min Stock',
+                                        hint: '5',
+                                        controller: _minStockCtrl,
+                                        icon: Icons.warning_amber_rounded,
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                _ModernTextField(
+                                  label: 'Barcode',
+                                  hint: 'Auto-generate if empty',
+                                  controller: _barcodeCtrl,
+                                  icon: Icons.qr_code_2_rounded,
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // Additional Info Section
+                          _buildSectionCard(
+                            title: 'Additional Info',
+                            icon: Icons.more_horiz_rounded,
+                            child: Column(
+                              children: [
+                                _ModernTextField(
+                                  label: 'Size',
+                                  hint: 'e.g., Small, Medium, Large',
+                                  controller: _sizeCtrl,
+                                  icon: Icons.straighten_rounded,
+                                ),
+                                const SizedBox(height: 16),
+                                _ModernTextField(
+                                  label: 'Description',
+                                  hint: 'Write product description...',
+                                  controller: _descCtrl,
+                                  icon: Icons.description_rounded,
+                                  maxLines: 3,
+                                ),
+                                const SizedBox(height: 16),
+                                _buildDryFoodToggle(),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // Action Buttons
+                          _buildActionButtons(),
+
+                          const SizedBox(height: 20),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Cost Price *',
-                  controller: _costCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
                   ),
-                  validator: (v) => (double.tryParse(v ?? '') == null)
-                      ? 'Enter a valid number'
-                      : null,
-                  hintText: '0.00',
                 ),
-                const SizedBox(height: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                _LabeledField(
-                  label: 'Selling Price *',
-                  controller: _sellCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF324137).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  validator: (v) => (double.tryParse(v ?? '') == null)
-                      ? 'Enter a valid number'
-                      : null,
-                  hintText: '0.00',
+                  child: Icon(icon, color: const Color(0xFF324137), size: 18),
                 ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Discount (%)',
-                  controller: _discountCtrl,
-                  keyboardType: TextInputType.number,
-                  hintText: '0',
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Stock Quantity *',
-                  controller: _stockCtrl,
-                  keyboardType: TextInputType.number,
-                  validator: (v) => (int.tryParse(v ?? '') == null)
-                      ? 'Enter a valid integer'
-                      : null,
-                  hintText: '0',
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Minimum Stock',
-                  controller: _minStockCtrl,
-                  keyboardType: TextInputType.number,
-                  hintText: '5',
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Size',
-                  controller: _sizeCtrl,
-                  hintText: 'Eg: Small, Medium, Large',
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Barcode',
-                  controller: _barcodeCtrl,
-                  hintText: 'Auto-generate if empty',
-                ),
-                const SizedBox(height: 12),
-
-                _LabeledField(
-                  label: 'Description',
-                  controller: _descCtrl,
-                  maxLines: 3,
-                  hintText: 'Write product description...',
-                ),
-                const SizedBox(height: 8),
-
-                Row(
-                  children: [
-                    Switch(
-                      value: _dryFood,
-                      onChanged: (v) => setState(() => _dryFood = v),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('This is a dry food item'),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _submit,
-                        child: Text(
-                          isEditMode ? 'Update Product' : 'Add Product',
-                        ),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF324137),
+                  ),
                 ),
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImagePicker() {
+    final hasImage =
+        _pickedImage != null ||
+        (_existingImageBase64 != null && _existingImageBase64!.isNotEmpty);
+
+    return GestureDetector(
+      onTap: _pickImage,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 160,
+        decoration: BoxDecoration(
+          color: hasImage
+              ? Colors.transparent
+              : const Color(0xFFC8E260).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: hasImage
+                ? const Color(0xFF35AE4A)
+                : const Color(0xFFC8E260).withOpacity(0.5),
+            width: 2,
+            style: hasImage ? BorderStyle.solid : BorderStyle.solid,
+          ),
+        ),
+        child: _pickedImage != null
+            ? Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: kIsWeb
+                          ? (_pickedImageBytes != null
+                                ? Image.memory(
+                                    _pickedImageBytes!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : _buildImagePlaceholder())
+                          : Image.file(
+                              File(_pickedImage!.path),
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF35AE4A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.edit_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Change',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : (_existingImageBase64 != null && _existingImageBase64!.isNotEmpty)
+            ? Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: double.infinity,
+                      child: _existingImageBase64!.contains('/')
+                          ? Image.network(
+                              '${ApiService.baseUrl}/products/images/${_existingImageBase64!}',
+                              fit: BoxFit.cover,
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Center(
+                                      child: CircularProgressIndicator(
+                                        value:
+                                            loadingProgress
+                                                    .expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                      .cumulativeBytesLoaded /
+                                                  loadingProgress
+                                                      .expectedTotalBytes!
+                                            : null,
+                                        color: const Color(0xFF324137),
+                                      ),
+                                    );
+                                  },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _buildImagePlaceholder(),
+                            )
+                          : Image.memory(
+                              base64Decode(
+                                _existingImageBase64!.contains(',')
+                                    ? _existingImageBase64!.split(',').last
+                                    : _existingImageBase64!,
+                              ),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _buildImagePlaceholder(),
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.edit_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            'Change',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : _buildImagePlaceholder(),
+      ),
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFC8E260).withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.add_photo_alternate_rounded,
+              size: 32,
+              color: Color(0xFF324137),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Tap to upload image',
+            style: TextStyle(
+              color: Color(0xFF324137),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Supports JPG, PNG, WebP',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryDropdown() {
+    return Consumer<ProductProvider>(
+      builder: (context, provider, _) {
+        final names = provider.categories
+            .map((c) => c.name)
+            .where((n) => n.isNotEmpty)
+            .toSet()
+            .toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.category_rounded,
+                  size: 16,
+                  color: Colors.grey.shade600,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Category',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const Text(' *', style: TextStyle(color: Colors.red)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: DropdownButtonFormField<String>(
+                value:
+                    (_selectedCategory != null &&
+                        names.contains(_selectedCategory))
+                    ? _selectedCategory
+                    : null,
+                hint: Text(
+                  'Select a category',
+                  style: TextStyle(color: Colors.grey.shade500),
+                ),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                borderRadius: BorderRadius.circular(14),
+                items: names
+                    .map(
+                      (name) => DropdownMenuItem<String>(
+                        value: name,
+                        child: Text(name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedCategory = value);
+                },
+                validator: (v) => v == null ? 'Please select a category' : null,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSupplierDropdown() {
+    final ids = _suppliers
+        .map((s) => (s['id'] ?? ''))
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.local_shipping_rounded,
+              size: 16,
+              color: Colors.grey.shade600,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Supplier',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            Text(
+              ' (optional)',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: DropdownButtonFormField<String>(
+            value:
+                (_selectedSupplier != null && ids.contains(_selectedSupplier))
+                ? _selectedSupplier
+                : null,
+            hint: Text(
+              'Select supplier',
+              style: TextStyle(color: Colors.grey.shade500),
+            ),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+            borderRadius: BorderRadius.circular(14),
+            items: _suppliers
+                .map(
+                  (supplier) => DropdownMenuItem<String>(
+                    value: supplier['id'],
+                    child: Text(supplier['name'] ?? ''),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedSupplier = value);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDryFoodToggle() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _dryFood = !_dryFood);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _dryFood
+              ? const Color(0xFFC8E260).withOpacity(0.15)
+              : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: _dryFood ? const Color(0xFFC8E260) : Colors.grey.shade200,
+          ),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _dryFood
+                    ? const Color(0xFF324137)
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                _dryFood ? Icons.check_rounded : Icons.grain_rounded,
+                size: 18,
+                color: _dryFood ? Colors.white : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Dry Food Item',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF324137),
+                    ),
+                  ),
+                  Text(
+                    'Toggle if this is a dry food product',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 48,
+              height: 28,
+              decoration: BoxDecoration(
+                color: _dryFood
+                    ? const Color(0xFF35AE4A)
+                    : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 200),
+                alignment: _dryFood
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: _isSubmitting
+                ? null
+                : () {
+                    HapticFeedback.lightImpact();
+                    Navigator.of(context).pop(false);
+                  },
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Center(
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 2,
+          child: GestureDetector(
+            onTap: _isSubmitting ? null : _submit,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isSubmitting
+                      ? [Colors.grey.shade400, Colors.grey.shade500]
+                      : [const Color(0xFF35AE4A), const Color(0xFF2E7D32)],
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: _isSubmitting
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: const Color(0xFF35AE4A).withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+              ),
+              child: Center(
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isEditMode ? Icons.save_rounded : Icons.add_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isEditMode ? 'Update Product' : 'Add Product',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Image Source Option Widget
+class _ImageSourceOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ImageSourceOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF324137).withOpacity(0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF324137).withOpacity(0.1)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 32, color: const Color(0xFF324137)),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF324137),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _LabeledField extends StatelessWidget {
+// Modern Text Field Widget
+class _ModernTextField extends StatelessWidget {
   final String label;
+  final String hint;
   final TextEditingController controller;
+  final IconData icon;
   final TextInputType? keyboardType;
-  final String? hintText;
+  final bool isRequired;
   final String? Function(String?)? validator;
   final int maxLines;
+  final Widget? suffix;
 
-  const _LabeledField({
+  const _ModernTextField({
     required this.label,
+    required this.hint,
     required this.controller,
+    required this.icon,
     this.keyboardType,
-    this.hintText,
+    this.isRequired = false,
     this.validator,
     this.maxLines = 1,
+    this.suffix,
   });
 
   @override
@@ -763,17 +1553,67 @@ class _LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label),
-        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(icon, size: 16, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            if (isRequired)
+              const Text(' *', style: TextStyle(color: Colors.red)),
+          ],
+        ),
+        const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
           validator: validator,
           maxLines: maxLines,
+          style: const TextStyle(fontSize: 15, color: Color(0xFF324137)),
           decoration: InputDecoration(
-            hintText: hintText,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            isDense: true,
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey.shade400),
+            filled: true,
+            fillColor: Colors.grey.shade50,
+            suffixIcon: suffix != null
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: suffix,
+                  )
+                : null,
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: Colors.grey.shade200),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(
+                color: Color(0xFF324137),
+                width: 1.5,
+              ),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
           ),
         ),
       ],
