@@ -599,7 +599,7 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Powered by ZORS POS',
+                      'Powered by Kodernet',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade600,
@@ -610,7 +610,7 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'www.zorscode.com',
+                  'www.kodernet.com',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                 ),
               ],
@@ -865,7 +865,7 @@ class _ReceiptScreenState extends State<ReceiptScreen>
               children: [
                 pw.SizedBox(height: 10),
                 pw.Text(
-                  'ZORS POS SYSTEM',
+                  ' KODERNET POS SYSTEM',
                   style: pw.TextStyle(
                     fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
