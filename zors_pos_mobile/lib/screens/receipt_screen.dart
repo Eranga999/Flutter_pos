@@ -373,7 +373,7 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'ZORS POS SYSTEM',
+                  'KODERNET POS SYSTEM',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -1047,13 +1047,13 @@ class _ReceiptScreenState extends State<ReceiptScreen>
                 pw.SizedBox(height: 5),
                 pw.Center(
                   child: pw.Text(
-                    'Powered by ZORS POS',
+                    'Powered by Kodernet',
                     style: const pw.TextStyle(fontSize: 9),
                   ),
                 ),
                 pw.Center(
                   child: pw.Text(
-                    'www.zorscode.com',
+                    'www.kodernet.com',
                     style: const pw.TextStyle(fontSize: 8),
                   ),
                 ),

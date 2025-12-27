@@ -30,7 +30,7 @@ class ZorsPosApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ReportsProvider()),
       ],
       child: MaterialApp(
-        title: 'ZORS POS',
+        title: 'KODERNET POS',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

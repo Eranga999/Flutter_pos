@@ -336,11 +336,6 @@ class _SplashScreenState extends State<SplashScreen>
         padding: const EdgeInsets.all(20),
         child: Container(
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF324137), Color(0xFF4a5d4f)],
-            ),
             borderRadius: BorderRadius.circular(24),
           ),
           child: ClipRRect(
