@@ -25,7 +25,7 @@ A mobile **Point of Sale (POS)** application developed using **Flutter**. This s
 - Mobile UI Frameworks
 
 ---
-
+```
 ## 📂 Project Structure
 Flutter_pos/
 │── android/              # Android native files
