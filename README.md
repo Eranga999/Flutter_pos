@@ -27,3 +27,18 @@ A mobile **Point of Sale (POS)** application developed using **Flutter**. This s
 ---
 
 ## 📂 Project Structure
+Flutter_pos/
+│── android/ # Android native files
+│── ios/ # iOS native files
+│── lib/ # Main application source code
+│ │── models/ # Data models (Product, Order, etc.)
+│ │── screens/ # UI screens (Home, Cart, Billing, etc.)
+│ │── widgets/ # Reusable UI components
+│ │── services/ # API calls and business logic
+│ │── utils/ # Helper functions and constants
+│ │── main.dart # App entry point
+│
+│── assets/ # Images, icons, fonts
+│── test/ # Unit and widget tests
+│── pubspec.yaml # Project dependencies
+│── README.md # Project documentation
